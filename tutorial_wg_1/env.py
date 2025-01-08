@@ -14,7 +14,6 @@ class DataCenterEnv(gym.Env):
 
         self.daily_energy_demand = 120  # MWh
         self.max_power_rate = 10  # MW
-        self.max_storage_capacity = 170 # TODO 1: Set the maximum storage capacity
         self.storage_level = 0
         self.hour = 1
         self.day = 1
@@ -74,14 +73,14 @@ class DataCenterEnv(gym.Env):
 
         if energy_transacted > 0:
             # Buying
-            buy_amount = min(energy_transacted, self.max_storage_capacity - self.storage_level) # TODO 2: Calculate the amount of energy to buy
+            buy_amount = energy_transacted # min(energy_transacted, self.max_storage_capacity - self.storage_level)
             cost = buy_amount * price
             self.storage_level += buy_amount
             reward = -cost
         else:
             # Selling
-            sell_amount = min(-energy_transacted, self.storage_level) # TODO 3: Calculate the amount of energy to sell
-            revenue = sell_amount * price # TODO 4: Calculate the revenue
+            sell_amount = min(-energy_transacted, self.storage_level)
+            revenue = sell_amount * price * 0.8
             self.storage_level -= sell_amount
             reward = revenue
 
@@ -94,7 +93,7 @@ class DataCenterEnv(gym.Env):
             self.hour = 1
             # End-of-day logic: keep up to +50 MWh over daily requirement
             surplus = max(self.storage_level - self.daily_energy_demand, 0.0)
-            carryover = min(surplus, 50.0) # TODO 5: Calculate the carryover
+            carryover = min(surplus, 50.0)
             self.storage_level = 0.0 + carryover  # reset day, keep carryover
 
         # Terminate if out of data
