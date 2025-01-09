@@ -1,6 +1,7 @@
 import numpy as np
 import h5py
 import os
+import csv
 
 class QLearningAgent:
     def __init__(self, env, discount_rate=0.95, learning_rate=0.1, epsilon=0.1, epsilon_decay=0.999, bin_size=20, q_table_file='q_table.h5'):
@@ -13,8 +14,8 @@ class QLearningAgent:
 
         # Define action space and state discretization
         self.action_space = np.linspace(-1, 1, 11)
-        self.storage_bins = np.linspace(0, 200, self.bin_size)
-        self.price_bins = np.linspace(0, 100, self.bin_size)
+        self.storage_bins = np.linspace(0, 170, self.bin_size)
+        self.price_bins = np.linspace(0, 200, self.bin_size)
         self.hour_bins = np.arange(1, 25)
         self.day_bins = np.arange(1, len(env.price_values) + 1)
 
@@ -72,3 +73,17 @@ class QLearningAgent:
     def decay_epsilon(self):
         """Decay epsilon to encourage exploitation over time."""
         self.epsilon *= self.epsilon_decay
+
+    def save_q_table_to_csv(self, filename="price_action_q_values.csv"):
+        """Save only price, action, and Q-value to a CSV file."""
+        with open(filename, mode='w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(["price", "action", "q_value"])
+            
+            for price_idx in range(self.Q_table.shape[1]):  # Iterate over price bins
+                for action_idx, action_value in enumerate(self.action_space):  # Iterate over actions
+                    q_value = np.mean(self.Q_table[:, price_idx, :, :, action_idx])  # Average over storage, hour, and day
+                    price_value = self.price_bins[price_idx]  # Map bin index to price
+                    writer.writerow([price_value, action_value, q_value])
+
+

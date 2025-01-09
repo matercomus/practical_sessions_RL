@@ -18,6 +18,9 @@ agent = QLearningAgent(environment)
 
 # Train the agent
 aggregate_reward = 0
+
+agent.save_q_table_to_csv("q_table.csv")
+
 for episode in range(episodes):
     state = environment.observation()
     terminated = False
@@ -45,12 +48,8 @@ for episode in range(episodes):
     print(f"Episode {episode + 1}: Reward = {episode_reward:.2f}, Epsilon = {agent.epsilon:.4f}")
 
     # Save Q-table at the end of the episode
-    if (episode + 1) % 10 == 0:
+    if (episode + 1) % 100 == 0:
         agent.save_q_table()
-        print(f"Q-table saved at episode {episode + 1}")
-        print("--------------------------------------------------")
-        print(agent.Q_table[:5, :5, :5, :5, :5])
-        print("--------------------------------------------------")
 
     environment.day = 1
     print(f"Resetting day to 1 at episode {episode + 1}")
