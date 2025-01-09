@@ -1,4 +1,5 @@
 from env import DataCenterEnv
+from q_learning_tabular import QAgent
 import numpy as np
 import argparse
 
@@ -10,16 +11,18 @@ np.set_printoptions(suppress=True, precision=2)
 path_to_dataset = args.path
 
 environment = DataCenterEnv(path_to_dataset)
+agent = QAgent(environment)
 
+# Train agent
+agent.train(episodes=1000)
+
+# Test agent
+state = environment.observation()
 aggregate_reward = 0
 terminated = False
-state = environment.observation()
 
 while not terminated:
-    # agent is your own imported agent class
-    # action = agent.act(state)
-    action = np.random.uniform(-1, 1)
-    # next_state is given as: [storage_level, price, hour, day]
+    action = agent.act(state)
     next_state, reward, terminated = environment.step(action)
     state = next_state
     aggregate_reward += reward
