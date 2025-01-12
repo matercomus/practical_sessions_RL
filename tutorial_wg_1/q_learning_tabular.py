@@ -2,8 +2,18 @@ import numpy as np
 import h5py
 import os
 
+
 class QLearningAgent:
-    def __init__(self, env, discount_rate=0.95, learning_rate=0.1, epsilon=0.1, epsilon_decay=0.999, bin_size=20, q_table_file='q_table.h5'):
+    def __init__(
+        self,
+        env,
+        discount_rate=0.95,
+        learning_rate=0.1,
+        epsilon=0.1,
+        epsilon_decay=0.999,
+        bin_size=20,
+        q_table_file="q_table.h5",
+    ):
         self.env = env
         self.discount_rate = discount_rate
         self.learning_rate = learning_rate
@@ -20,20 +30,26 @@ class QLearningAgent:
 
         # Check if the Q-table already exists in a file
         if os.path.exists(q_table_file):
-            with h5py.File(q_table_file, 'r') as f:
-                self.Q_table = f['q_table'][:]
+            with h5py.File(q_table_file, "r") as f:
+                self.Q_table = f["q_table"][:]
         else:
             # Create a Q-table if it doesn't exist
             self.Q_table = np.zeros(
-                (self.bin_size, self.bin_size, len(self.hour_bins), len(self.day_bins), len(self.action_space))
+                (
+                    self.bin_size,
+                    self.bin_size,
+                    len(self.hour_bins),
+                    len(self.day_bins),
+                    len(self.action_space),
+                )
             )
-        
+
         self.q_table_file = q_table_file
 
     def save_q_table(self):
         """Save the Q-table to an HDF5 file."""
-        with h5py.File(self.q_table_file, 'w') as f:
-            f.create_dataset('q_table', data=self.Q_table)
+        with h5py.File(self.q_table_file, "w") as f:
+            f.create_dataset("q_table", data=self.Q_table)
 
     def discretize_state(self, state):
         """Convert continuous state values into discrete bins."""
@@ -55,19 +71,24 @@ class QLearningAgent:
     def update_Q(self, state, action, reward, next_state, done):
         """Update the Q-table using the Q-learning formula."""
         storage_idx, price_idx, hour_idx, day_idx = self.discretize_state(state)
-        next_storage_idx, next_price_idx, next_hour_idx, next_day_idx = self.discretize_state(next_state)
+        next_storage_idx, next_price_idx, next_hour_idx, next_day_idx = (
+            self.discretize_state(next_state)
+        )
 
         current_q = self.Q_table[storage_idx, price_idx, hour_idx, day_idx, action]
         if done:
             target = reward
         else:
             next_max_q = np.max(
-                self.Q_table[next_storage_idx, next_price_idx, next_hour_idx, next_day_idx]
+                self.Q_table[
+                    next_storage_idx, next_price_idx, next_hour_idx, next_day_idx
+                ]
             )
             target = reward + self.discount_rate * next_max_q
 
-        self.Q_table[storage_idx, price_idx, hour_idx, day_idx, action] += self.learning_rate * (target - current_q)
-
+        self.Q_table[
+            storage_idx, price_idx, hour_idx, day_idx, action
+        ] += self.learning_rate * (target - current_q)
 
     def decay_epsilon(self):
         """Decay epsilon to encourage exploitation over time."""
