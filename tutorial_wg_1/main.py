@@ -3,6 +3,8 @@ from q_learning_tabular import QLearningAgent
 import numpy as np
 import argparse
 import matplotlib.pyplot as plt
+import os
+from datetime import datetime
 
 # Argument parser
 args = argparse.ArgumentParser()
@@ -27,6 +29,17 @@ args.add_argument(
 args.add_argument(
     "--make-graphs", action="store_true", help="Flag to enable graph generation"
 )
+args.add_argument(
+    "--save-q-table-csv", action="store_true", help="Flag to save Q-table as CSV"
+)
+args.add_argument(
+    "--save-model",
+    action="store_true",
+    help="Flag to save the trained model in the run folder",
+)
+args.add_argument(
+    "--load-model", type=str, default=None, help="Path to load a pre-trained model"
+)
 args = args.parse_args()
 
 # Configure numpy print options
@@ -38,10 +51,24 @@ val_path = args.val_path
 episodes = args.episodes
 validate_every = args.validate_every
 make_graphs = args.make_graphs
+save_q_table_csv = args.save_q_table_csv
+load_model_path = args.load_model
 
-# Create environment and agent
+# Create a timestamped directory for this run
+run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+output_dir = f"run_{run_timestamp}"
+os.makedirs(output_dir, exist_ok=True)
+
+# Create environment
 environment = DataCenterEnv(train_path)
-agent = QLearningAgent(environment)
+
+# Load or initialize agent
+if load_model_path and os.path.exists(load_model_path):
+    print(f"Loading model from {load_model_path}")
+    agent = QLearningAgent(environment, q_table_file=load_model_path)
+else:
+    print("Initializing a new agent")
+    agent = QLearningAgent(environment)
 
 # Metrics storage
 training_rewards = []
@@ -115,7 +142,23 @@ for episode in range(episodes):
     environment.day = 1
 
 # Save Q-table at the end
+q_table_path = os.path.join(output_dir, "q_table.h5")
+agent.q_table_file = q_table_path
 agent.save_q_table()
+print(f"Q-table saved at {q_table_path}")
+
+# Save Q-table to CSV if the flag is set
+if save_q_table_csv:
+    csv_path = os.path.join(output_dir, "q_table_summary.csv")
+    agent.save_q_table_to_csv(csv_path)
+    print(f"Q-table summary saved at {csv_path}")
+
+# Save the trained model if the flag is set
+if args.save_model:
+    model_path = os.path.join(output_dir, "model.h5")
+    agent.q_table_file = model_path
+    agent.save_q_table()
+    print(f"Model saved at {model_path}")
 
 # Plot training and validation metrics if the flag is set
 if make_graphs:
@@ -131,7 +174,22 @@ if make_graphs:
     plt.title("Training and Validation Rewards")
     plt.legend()
     plt.grid()
-    plt.savefig("training_validation_rewards.png")
-    print("Graph saved as 'training_validation_rewards.png'")
+    graph_path = os.path.join(output_dir, "training_validation_rewards.png")
+    plt.savefig(graph_path)
+    print(f"Graph saved at {graph_path}")
+
+    # Generate heatmap of Q-table
+    q_table_slice = agent.Q_table[
+        :, :, 12, 0, :
+    ]  # Example slice: storage x price at hour 12, day 0
+    plt.figure()
+    plt.imshow(np.mean(q_table_slice, axis=2), aspect="auto", cmap="viridis")
+    plt.colorbar(label="Q-value")
+    plt.title("Q-table Heatmap (Average over Actions)")
+    plt.xlabel("Price Index")
+    plt.ylabel("Storage Index")
+    heatmap_path = os.path.join(output_dir, "q_table_heatmap.png")
+    plt.savefig(heatmap_path)
+    print(f"Q-table heatmap saved at {heatmap_path}")
 
 print(f"Total reward after {episodes} episodes: {aggregate_reward:.2f}")
