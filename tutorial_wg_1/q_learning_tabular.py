@@ -4,7 +4,7 @@ import os
 import csv
 
 class QLearningAgent:
-    def __init__(self, env, discount_rate=0.95, learning_rate=0.1, epsilon=0.1, epsilon_decay=0.999, bin_size=20, q_table_file='q_table.h5'):
+    def __init__(self, env, discount_rate=0.99, learning_rate=0.1, epsilon=0.5, epsilon_decay=0.999, bin_size=20, q_table_file='q_table.h5'):
         self.env = env
         self.discount_rate = discount_rate
         self.learning_rate = learning_rate
