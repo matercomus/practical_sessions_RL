@@ -12,18 +12,20 @@ class QLearningAgent:
         self.epsilon_decay = epsilon_decay
         self.bin_size = bin_size
 
-        # Define action space and state discretization
+        # Define action space and state discretization  # max 1000 states
         self.action_space = np.linspace(-1, 1, 21)  # Changed to 21 bins
-        self.storage_bins = np.linspace(0, 170, self.bin_size)
-        self.price_bins = np.linspace(0, 200, self.bin_size)
-        self.hour_bins = np.arange(1, 25)  # 24 hours
+        self.storage_bins = np.linspace(0, 170, 5)
+        self.price_bins = np.linspace(0, 100, 5)
+        self.hour_bins = np.arange(1, 25)  # 24 hours - - np.linspace(1, 25, 12)?
         self.day_bins = np.arange(1, len(env.price_values) + 1)
+
 
         # Calculate dimensions for Q-table
         self.n_storage_bins = len(self.storage_bins)
         self.n_price_bins = len(self.price_bins)
         self.n_hour_bins = len(self.hour_bins)
         self.n_day_bins = len(self.day_bins)
+        self.n_day_bins = 1 # does this negate it
         self.n_actions = len(self.action_space)
 
         # Check if the Q-table already exists and has correct dimensions
@@ -94,7 +96,26 @@ class QLearningAgent:
         """Decay epsilon to encourage exploitation over time."""
         self.epsilon *= self.epsilon_decay
 
-    def save_q_table_to_csv(self, filename="price_action_q_values.csv"):
+    def save_q_table_to_csv(self, filename="full_q_values.csv"):
+        """Save complete state information, action, and Q-value to a CSV file."""
+        with open(filename, mode='w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(["storage", "price", "hour", "day", "action", "q_value"])
+            
+            for storage_idx in range(self.n_storage_bins):
+                for price_idx in range(self.n_price_bins):
+                    for hour_idx in range(self.n_hour_bins):
+                        for day_idx in range(self.n_day_bins):
+                            for action_idx, action_value in enumerate(self.action_space):
+                                storage_value = self.storage_bins[storage_idx]
+                                price_value = self.price_bins[price_idx]
+                                hour_value = self.hour_bins[hour_idx]
+                                day_value = self.day_bins[day_idx]
+                                q_value = self.Q_table[storage_idx, price_idx, hour_idx, day_idx, action_idx]
+                                writer.writerow([storage_value, price_value, hour_value, 
+                                            day_value, action_value, q_value])
+                            
+    def save_q_table_to_csv_price(self, filename="price_action_q_values.csv"):
         """Save only price, action, and Q-value to a CSV file."""
         with open(filename, mode='w', newline='') as file:
             writer = csv.writer(file)
@@ -105,3 +126,4 @@ class QLearningAgent:
                     q_value = np.mean(self.Q_table[:, price_idx, :, :, action_idx])
                     price_value = self.price_bins[price_idx]
                     writer.writerow([price_value, action_value, q_value])
+                

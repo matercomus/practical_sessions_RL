@@ -5,7 +5,7 @@ import argparse
 
 args = argparse.ArgumentParser()
 args.add_argument('--path', type=str, default='train.xlsx')
-args.add_argument('--episodes', type=int, default=1000)
+args.add_argument('--episodes', type=int, default=10)
 args = args.parse_args()
 
 np.set_printoptions(suppress=True, precision=2)
@@ -48,7 +48,7 @@ for episode in range(episodes):
     print(f"Episode {episode + 1}: Reward = {episode_reward:.2f}, Epsilon = {agent.epsilon:.4f}")
 
     # Save Q-table at the end of the episode
-    if (episode + 1) % 100 == 0:
+    if (episode + 1) % 10 == 0:
         agent.save_q_table()
 
     state = environment.reset()
@@ -56,3 +56,5 @@ for episode in range(episodes):
 
 
 print(f'Total reward after {episodes} episodes: {aggregate_reward:.2f}')
+
+agent.save_q_table_to_csv("q_table.csv")
