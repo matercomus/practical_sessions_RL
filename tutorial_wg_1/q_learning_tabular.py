@@ -3,8 +3,18 @@ import h5py
 import os
 import csv
 
+
 class QLearningAgent:
-    def __init__(self, env, discount_rate=0.95, learning_rate=0.1, epsilon=0.1, epsilon_decay=0.999, bin_size=3, q_table_file='q_table.h5'):
+    def __init__(
+        self,
+        env,
+        discount_rate=0.95,
+        learning_rate=0.1,
+        epsilon=0.1,
+        epsilon_decay=0.999,
+        bin_size=3,
+        q_table_file="q_table.h5",
+    ):
         self.env = env
         self.discount_rate = discount_rate
         self.learning_rate = learning_rate
@@ -29,41 +39,71 @@ class QLearningAgent:
         # Check if the Q-table already exists and has correct dimensions
         if os.path.exists(q_table_file):
             try:
-                with h5py.File(q_table_file, 'r') as f:
-                    existing_q_table = f['q_table'][:]
-                    if existing_q_table.shape == (self.n_storage_bins, self.n_price_bins, 
-                                                self.n_hour_bins, self.n_day_bins, self.n_actions):
+                with h5py.File(q_table_file, "r") as f:
+                    existing_q_table = f["q_table"][:]
+                    if existing_q_table.shape == (
+                        self.n_storage_bins,
+                        self.n_price_bins,
+                        self.n_hour_bins,
+                        self.n_day_bins,
+                        self.n_actions,
+                    ):
                         self.Q_table = existing_q_table
                     else:
-                        print("Existing Q-table has incorrect dimensions. Creating new Q-table.")
-                        self.Q_table = np.zeros((self.n_storage_bins, self.n_price_bins, 
-                                               self.n_hour_bins, self.n_day_bins, self.n_actions))
+                        print(
+                            "Existing Q-table has incorrect dimensions. Creating new Q-table."
+                        )
+                        self.Q_table = np.zeros(
+                            (
+                                self.n_storage_bins,
+                                self.n_price_bins,
+                                self.n_hour_bins,
+                                self.n_day_bins,
+                                self.n_actions,
+                            )
+                        )
             except Exception as e:
                 print(f"Error loading Q-table: {e}. Creating new Q-table.")
-                self.Q_table = np.zeros((self.n_storage_bins, self.n_price_bins, 
-                                       self.n_hour_bins, self.n_day_bins, self.n_actions))
+                self.Q_table = np.zeros(
+                    (
+                        self.n_storage_bins,
+                        self.n_price_bins,
+                        self.n_hour_bins,
+                        self.n_day_bins,
+                        self.n_actions,
+                    )
+                )
         else:
             # Create a new Q-table with correct dimensions
-            self.Q_table = np.zeros((self.n_storage_bins, self.n_price_bins, 
-                                   self.n_hour_bins, self.n_day_bins, self.n_actions))
-        
+            self.Q_table = np.zeros(
+                (
+                    self.n_storage_bins,
+                    self.n_price_bins,
+                    self.n_hour_bins,
+                    self.n_day_bins,
+                    self.n_actions,
+                )
+            )
+
         self.q_table_file = q_table_file
 
     def save_q_table(self):
         """Save the Q-table to an HDF5 file."""
-        with h5py.File(self.q_table_file, 'w') as f:
-            f.create_dataset('q_table', data=self.Q_table)
+        with h5py.File(self.q_table_file, "w") as f:
+            f.create_dataset("q_table", data=self.Q_table)
 
     def discretize_state(self, state):
         """Convert continuous state values into discrete bins."""
         storage, price, hour, day = state
-        
+
         # Ensure indices are within bounds
-        storage_idx = min(np.digitize(storage, self.storage_bins) - 1, self.n_storage_bins - 1)
+        storage_idx = min(
+            np.digitize(storage, self.storage_bins) - 1, self.n_storage_bins - 1
+        )
         price_idx = min(np.digitize(price, self.price_bins) - 1, self.n_price_bins - 1)
         hour_idx = min(int(hour - 1), self.n_hour_bins - 1)  # Hours are 1-based
         day_idx = min(int(day - 1), self.n_day_bins - 1)  # Days are 1-based
-        
+
         return storage_idx, price_idx, hour_idx, day_idx
 
     def choose_action(self, state):
@@ -77,18 +117,24 @@ class QLearningAgent:
     def update_Q(self, state, action, reward, next_state, done):
         """Update the Q-table using the Q-learning formula."""
         storage_idx, price_idx, hour_idx, day_idx = self.discretize_state(state)
-        next_storage_idx, next_price_idx, next_hour_idx, next_day_idx = self.discretize_state(next_state)
+        next_storage_idx, next_price_idx, next_hour_idx, next_day_idx = (
+            self.discretize_state(next_state)
+        )
 
         current_q = self.Q_table[storage_idx, price_idx, hour_idx, day_idx, action]
         if done:
             target = reward
         else:
             next_max_q = np.max(
-                self.Q_table[next_storage_idx, next_price_idx, next_hour_idx, next_day_idx]
+                self.Q_table[
+                    next_storage_idx, next_price_idx, next_hour_idx, next_day_idx
+                ]
             )
             target = reward + self.discount_rate * next_max_q
 
-        self.Q_table[storage_idx, price_idx, hour_idx, day_idx, action] += self.learning_rate * (target - current_q)
+        self.Q_table[
+            storage_idx, price_idx, hour_idx, day_idx, action
+        ] += self.learning_rate * (target - current_q)
 
     def decay_epsilon(self):
         """Decay epsilon to encourage exploitation over time."""
@@ -96,11 +142,12 @@ class QLearningAgent:
 
     def save_q_table_to_csv(self, filename="price_action_q_values.csv"):
         """Save only price, action, and Q-value to a CSV file."""
-        with open(filename, mode='w', newline='') as file:
+        with open(filename, mode="w", newline="") as file:
             writer = csv.writer(file)
             writer.writerow(["price", "action", "q_value"])
-            
+
             for price_idx in range(self.n_price_bins):
                 for action_idx, action_value in enumerate(self.action_space):
                     q_value = np.mean(self.Q_table[:, price_idx, :, :, action_idx])
                     price_value = self.price_bins[price_idx]
+                    writer.writerow([price_value, action_value, q_value])
