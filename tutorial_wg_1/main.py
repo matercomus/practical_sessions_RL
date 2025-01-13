@@ -91,7 +91,8 @@ def validate_agent(agent, val_path, num_episodes=10):
             episode_reward += reward
             state = next_state
         total_reward += episode_reward
-        validation_env.day = 1  # Reset environment
+        # validation_env.day = 1  # Reset environment
+        state = environment.reset()
     return total_reward / num_episodes
 
 
