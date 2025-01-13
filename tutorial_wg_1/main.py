@@ -51,8 +51,8 @@ for episode in range(episodes):
     if (episode + 1) % 100 == 0:
         agent.save_q_table()
 
-    environment.day = 1
-    print(f"Resetting day to 1 at episode {episode + 1}")
+    state = environment.reset()
+    print(f"Reset environment at episode {episode + 1}")
 
 
 print(f'Total reward after {episodes} episodes: {aggregate_reward:.2f}')

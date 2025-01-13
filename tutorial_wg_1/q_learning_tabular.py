@@ -4,7 +4,7 @@ import os
 import csv
 
 class QLearningAgent:
-    def __init__(self, env, discount_rate=0.95, learning_rate=0.1, epsilon=0.1, epsilon_decay=0.999, bin_size=20, q_table_file='q_table.h5'):
+    def __init__(self, env, discount_rate=0.95, learning_rate=0.1, epsilon=0.1, epsilon_decay=0.999, bin_size=3, q_table_file='q_table.h5'):
         self.env = env
         self.discount_rate = discount_rate
         self.learning_rate = learning_rate
@@ -13,21 +13,39 @@ class QLearningAgent:
         self.bin_size = bin_size
 
         # Define action space and state discretization
-        self.action_space = np.linspace(-1, 1, 11)
+        self.action_space = np.linspace(-1, 1, 21)  # Changed to 21 bins
         self.storage_bins = np.linspace(0, 170, self.bin_size)
         self.price_bins = np.linspace(0, 200, self.bin_size)
-        self.hour_bins = np.arange(1, 25)
+        self.hour_bins = np.arange(1, 25)  # 24 hours
         self.day_bins = np.arange(1, len(env.price_values) + 1)
 
-        # Check if the Q-table already exists in a file
+        # Calculate dimensions for Q-table
+        self.n_storage_bins = len(self.storage_bins)
+        self.n_price_bins = len(self.price_bins)
+        self.n_hour_bins = len(self.hour_bins)
+        self.n_day_bins = len(self.day_bins)
+        self.n_actions = len(self.action_space)
+
+        # Check if the Q-table already exists and has correct dimensions
         if os.path.exists(q_table_file):
-            with h5py.File(q_table_file, 'r') as f:
-                self.Q_table = f['q_table'][:]
+            try:
+                with h5py.File(q_table_file, 'r') as f:
+                    existing_q_table = f['q_table'][:]
+                    if existing_q_table.shape == (self.n_storage_bins, self.n_price_bins, 
+                                                self.n_hour_bins, self.n_day_bins, self.n_actions):
+                        self.Q_table = existing_q_table
+                    else:
+                        print("Existing Q-table has incorrect dimensions. Creating new Q-table.")
+                        self.Q_table = np.zeros((self.n_storage_bins, self.n_price_bins, 
+                                               self.n_hour_bins, self.n_day_bins, self.n_actions))
+            except Exception as e:
+                print(f"Error loading Q-table: {e}. Creating new Q-table.")
+                self.Q_table = np.zeros((self.n_storage_bins, self.n_price_bins, 
+                                       self.n_hour_bins, self.n_day_bins, self.n_actions))
         else:
-            # Create a Q-table if it doesn't exist
-            self.Q_table = np.zeros(
-                (self.bin_size, self.bin_size, len(self.hour_bins), len(self.day_bins), len(self.action_space))
-            )
+            # Create a new Q-table with correct dimensions
+            self.Q_table = np.zeros((self.n_storage_bins, self.n_price_bins, 
+                                   self.n_hour_bins, self.n_day_bins, self.n_actions))
         
         self.q_table_file = q_table_file
 
@@ -39,16 +57,19 @@ class QLearningAgent:
     def discretize_state(self, state):
         """Convert continuous state values into discrete bins."""
         storage, price, hour, day = state
-        storage_idx = np.digitize(storage, self.storage_bins) - 1
-        price_idx = np.digitize(price, self.price_bins) - 1
-        hour_idx = int(hour - 1)  # Hours are 1-based
-        day_idx = int(day - 1)  # Days are 1-based
+        
+        # Ensure indices are within bounds
+        storage_idx = min(np.digitize(storage, self.storage_bins) - 1, self.n_storage_bins - 1)
+        price_idx = min(np.digitize(price, self.price_bins) - 1, self.n_price_bins - 1)
+        hour_idx = min(int(hour - 1), self.n_hour_bins - 1)  # Hours are 1-based
+        day_idx = min(int(day - 1), self.n_day_bins - 1)  # Days are 1-based
+        
         return storage_idx, price_idx, hour_idx, day_idx
 
     def choose_action(self, state):
         """Choose an action using epsilon-greedy policy."""
         if np.random.random() < self.epsilon:
-            return np.random.choice(range(len(self.action_space)))
+            return np.random.choice(self.n_actions)
         else:
             storage_idx, price_idx, hour_idx, day_idx = self.discretize_state(state)
             return np.argmax(self.Q_table[storage_idx, price_idx, hour_idx, day_idx])
@@ -69,7 +90,6 @@ class QLearningAgent:
 
         self.Q_table[storage_idx, price_idx, hour_idx, day_idx, action] += self.learning_rate * (target - current_q)
 
-
     def decay_epsilon(self):
         """Decay epsilon to encourage exploitation over time."""
         self.epsilon *= self.epsilon_decay
@@ -80,10 +100,8 @@ class QLearningAgent:
             writer = csv.writer(file)
             writer.writerow(["price", "action", "q_value"])
             
-            for price_idx in range(self.Q_table.shape[1]):  # Iterate over price bins
-                for action_idx, action_value in enumerate(self.action_space):  # Iterate over actions
-                    q_value = np.mean(self.Q_table[:, price_idx, :, :, action_idx])  # Average over storage, hour, and day
-                    price_value = self.price_bins[price_idx]  # Map bin index to price
+            for price_idx in range(self.n_price_bins):
+                for action_idx, action_value in enumerate(self.action_space):
+                    q_value = np.mean(self.Q_table[:, price_idx, :, :, action_idx])
+                    price_value = self.price_bins[price_idx]
                     writer.writerow([price_value, action_value, q_value])
-
-
