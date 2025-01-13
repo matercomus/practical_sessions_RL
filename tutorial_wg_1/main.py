@@ -17,23 +17,35 @@ def create_output_directory():
 
 def plot_metrics(training_rewards, validation_rewards, output_dir):
     """Plot and save training/validation metrics"""
+    # Plot training rewards
     plt.figure()
     plt.plot(
         range(1, len(training_rewards) + 1), training_rewards, label="Training Rewards"
     )
+    plt.xlabel("Episode")
+    plt.ylabel("Reward")
+    plt.title("Training Rewards")
+    plt.legend()
+    plt.grid()
+    training_graph_path = os.path.join(output_dir, "training_rewards.png")
+    plt.savefig(training_graph_path)
+    print(f"Training graph saved at {training_graph_path}")
+
+    # Plot validation rewards if available
     if validation_rewards:
+        plt.figure()
         validation_episodes, val_rewards = zip(*validation_rewards)
         plt.plot(
             validation_episodes, val_rewards, label="Validation Rewards", marker="o"
         )
-    plt.xlabel("Episode")
-    plt.ylabel("Reward")
-    plt.title("Training and Validation Rewards")
-    plt.legend()
-    plt.grid()
-    graph_path = os.path.join(output_dir, "training_validation_rewards.png")
-    plt.savefig(graph_path)
-    print(f"Graph saved at {graph_path}")
+        plt.xlabel("Episode")
+        plt.ylabel("Reward")
+        plt.title("Validation Rewards")
+        plt.legend()
+        plt.grid()
+        validation_graph_path = os.path.join(output_dir, "validation_rewards.png")
+        plt.savefig(validation_graph_path)
+        print(f"Validation graph saved at {validation_graph_path}")
 
 
 def main():
