@@ -114,15 +114,17 @@ class QLearningAgent(BaseAgent):
 
     def train(
         self, env, episodes: int, validate_every: int = None, val_env=None
-    ) -> Tuple[list, list]:
+    ) -> Tuple[list, list, list]:
         """Train the agent on the environment"""
         training_rewards = []
         validation_rewards = []
+        state_action_history = []
 
         for episode in range(episodes):
             state = env.observation()
             terminated = False
             episode_reward = 0
+            episode_history = []
 
             while not terminated:
                 action_idx = self.choose_action(state)
@@ -131,10 +133,12 @@ class QLearningAgent(BaseAgent):
                 episode_reward += reward
 
                 self.update(state, action_idx, reward, next_state, terminated)
+                episode_history.append((state, action))
                 state = next_state
 
             self.decay_epsilon()
             training_rewards.append(episode_reward)
+            state_action_history.append(episode_history)
 
             print(
                 f"Episode {episode + 1}: Reward = {episode_reward:.2f}, Epsilon = {self.epsilon:.4f}"
@@ -149,7 +153,7 @@ class QLearningAgent(BaseAgent):
 
             env.reset()
 
-        return training_rewards, validation_rewards
+        return training_rewards, validation_rewards, state_action_history
 
     def validate(self, env, num_episodes: int = 10) -> float:
         """Run validation episodes and return average reward"""

@@ -48,6 +48,57 @@ def plot_metrics(training_rewards, validation_rewards, output_dir):
         print(f"Validation graph saved at {validation_graph_path}")
 
 
+def plot_agent_behavior(state_action_history, output_dir):
+    """Plot the agent's behavior over episodes"""
+    for episode_idx, episode_history in enumerate(state_action_history):
+        states, actions = zip(*episode_history)
+        storage, price, hour, day = zip(*states)
+
+        plt.figure(figsize=(12, 8))
+
+        plt.subplot(2, 2, 1)
+        plt.plot(storage, label="Storage")
+        plt.xlabel("Step")
+        plt.ylabel("Storage")
+        plt.title(f"Episode {episode_idx + 1} - Storage")
+        plt.legend()
+        plt.ylim(min(storage) - 1, max(storage) + 1)
+
+        plt.subplot(2, 2, 2)
+        plt.plot(price, label="Price")
+        plt.xlabel("Step")
+        plt.ylabel("Price")
+        plt.title(f"Episode {episode_idx + 1} - Price")
+        plt.legend()
+        plt.ylim(min(price) - 1, max(price) + 1)
+
+        plt.subplot(2, 2, 3)
+        plt.plot(hour, label="Hour")
+        plt.xlabel("Step")
+        plt.ylabel("Hour")
+        plt.title(f"Episode {episode_idx + 1} - Hour")
+        plt.legend()
+        plt.ylim(min(hour) - 1, max(hour) + 1)
+
+        plt.subplot(2, 2, 4)
+        plt.plot(actions, label="Action")
+        plt.xlabel("Step")
+        plt.ylabel("Action")
+        plt.title(f"Episode {episode_idx + 1} - Action")
+        plt.legend()
+        plt.ylim(min(actions) - 1, max(actions) + 1)
+
+        behavior_graph_path = os.path.join(
+            output_dir, f"episode_{episode_idx + 1}_behavior.png"
+        )
+        plt.tight_layout()
+        plt.savefig(behavior_graph_path)
+        plt.close()
+        print(
+            f"Behavior graph for Episode {episode_idx + 1} saved at {behavior_graph_path}"
+        )
+
+
 def main():
     # Parse arguments
     parser = argparse.ArgumentParser()
@@ -71,7 +122,7 @@ def main():
     agent = QLearningAgent(train_env, model_path=args.load_model)
 
     # Train agent
-    training_rewards, validation_rewards = agent.train(
+    training_rewards, validation_rewards, state_action_history = agent.train(
         train_env,
         episodes=args.episodes,
         validate_every=args.validate_every,
@@ -87,6 +138,7 @@ def main():
     # Plot metrics if requested
     if args.make_graphs:
         plot_metrics(training_rewards, validation_rewards, output_dir)
+        plot_agent_behavior(state_action_history, output_dir)
 
     # Print final metrics
     print(f"Total reward after {args.episodes} episodes: {sum(training_rewards):.2f}")
