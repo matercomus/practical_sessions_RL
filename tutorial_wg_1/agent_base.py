@@ -1,12 +1,13 @@
 from abc import ABC, abstractmethod
 import os
-from typing import Any, Tuple
+from typing import Any, Tuple, Optional
 
 class BaseAgent(ABC):
     """Abstract base class for all agents"""
     
     @abstractmethod
-    def train(self, env, episodes: int, validate_every: int = None, val_env = None) -> Tuple[list, list]:
+    def train(self, env, episodes: int, validate_every: Optional[int] = None, val_env=None
+    ) -> Tuple[list, list, list]:
         """
         Train the agent on the environment
         
