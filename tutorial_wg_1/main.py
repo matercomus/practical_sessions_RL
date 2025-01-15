@@ -1,10 +1,9 @@
 from env import DataCenterEnv
 from q_learning_agent import QLearningAgent
-import numpy as np
 import argparse
 import matplotlib.pyplot as plt
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 def create_output_directory():
@@ -76,11 +75,25 @@ def plot_agent_behavior(
             states, actions = zip(*interval_history)
             storage, price, hour = zip(*[state[:3] for state in states])
 
+            time_labels = [
+                f"Day {i // hours_per_day + 1}, {str(timedelta(hours=i % hours_per_day))[:-3]}"
+                for i in range(len(storage))
+            ]
+
+            # Adjust the step size for x-axis labels to avoid clutter
+            step_size = max(1, len(storage) // 10)
+
             plt.figure(figsize=(12, 8))
 
             plt.subplot(3, 1, 1)
             plt.plot(range(len(storage)), storage, "bo-", label="Storage")
-            plt.xlabel(f"Time (hours, {n_days} days)")
+            plt.xticks(
+                range(0, len(storage), step_size),
+                time_labels[::step_size],
+                rotation=45,
+                ha="right",
+            )
+            plt.xlabel(f"Time (days and hours)")
             plt.ylabel("Storage")
             plt.title(
                 f"Episode {episode_idx + 1}, Interval {interval_start // steps_per_interval + 1} - Storage"
@@ -90,7 +103,13 @@ def plot_agent_behavior(
 
             plt.subplot(3, 1, 2)
             plt.plot(range(len(price)), price, "ro-", label="Price")
-            plt.xlabel(f"Time (hours, {n_days} days)")
+            plt.xticks(
+                range(0, len(price), step_size),
+                time_labels[::step_size],
+                rotation=45,
+                ha="right",
+            )
+            plt.xlabel(f"Time (days and hours)")
             plt.ylabel("Price")
             plt.title(
                 f"Episode {episode_idx + 1}, Interval {interval_start // steps_per_interval + 1} - Price"
@@ -100,7 +119,13 @@ def plot_agent_behavior(
 
             plt.subplot(3, 1, 3)
             plt.plot(range(len(actions)), actions, "go-", label="Action")
-            plt.xlabel(f"Time (hours, {n_days} days)")
+            plt.xticks(
+                range(0, len(actions), step_size),
+                time_labels[::step_size],
+                rotation=45,
+                ha="right",
+            )
+            plt.xlabel(f"Time (days and hours)")
             plt.ylabel("Action")
             plt.title(
                 f"Episode {episode_idx + 1}, Interval {interval_start // steps_per_interval + 1} - Action"
