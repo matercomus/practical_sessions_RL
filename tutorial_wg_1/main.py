@@ -49,7 +49,10 @@ def plot_metrics(training_rewards, validation_rewards, output_dir):
 
 
 def plot_agent_behavior(
-    state_action_history, output_dir, n_days=7, episodes_to_plot=None
+    state_action_history,
+    output_dir,
+    n_days=7,
+    episodes_to_plot=None,
 ):
     """Plot the agent's behavior over episodes"""
     if episodes_to_plot is None:
@@ -127,6 +130,7 @@ def main():
     parser.add_argument("--make-graphs", action="store_true")
     parser.add_argument("--save-model", action="store_true")
     parser.add_argument("--load-model", type=str, default=None)
+    parser.add_argument("--plot-interval-days", type=int, default=7)
     args = parser.parse_args()
 
     # Create output directory
@@ -156,7 +160,11 @@ def main():
     # Plot metrics if requested
     if args.make_graphs:
         plot_metrics(training_rewards, validation_rewards, output_dir)
-        plot_agent_behavior(state_action_history, output_dir)
+        plot_agent_behavior(
+            state_action_history,
+            output_dir,
+            n_days=args.plot_interval_days,
+        )
 
     # Print final metrics
     print(f"Total reward after {args.episodes} episodes: {sum(training_rewards):.2f}")
