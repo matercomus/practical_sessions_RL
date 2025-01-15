@@ -3,7 +3,7 @@ import h5py
 import os
 import csv
 from dataclasses import dataclass
-from typing import Union, List, Tuple, Any
+from typing import Union, List, Tuple, Any, Optional
 from agent_base import BaseAgent
 
 
@@ -113,7 +113,7 @@ class QLearningAgent(BaseAgent):
         self.Q_table = np.zeros(dimensions)
 
     def train(
-        self, env, episodes: int, validate_every: int = None, val_env=None
+        self, env, episodes: int, validate_every: Optional[int] = None, val_env=None
     ) -> Tuple[list, list, list]:
         """Train the agent on the environment"""
         training_rewards = []
