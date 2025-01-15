@@ -165,7 +165,7 @@ class QLearningAgent(BaseAgent):
             episode_reward = 0
 
             while not terminated:
-                action_idx = np.argmax(self.Q_table[self.discretize_state(state)])
+                action_idx = self.choose_action(state)
                 action = self.action_space[action_idx]
                 next_state, reward, terminated = env.step(action)
                 episode_reward += reward
@@ -210,7 +210,6 @@ class QLearningAgent(BaseAgent):
         with h5py.File(path, "r") as f:
             self.Q_table = f["q_table"][:]
 
-    # Keep other existing methods (discretize_state, decay_epsilon, save_q_table_to_csv)...
     def discretize_state(self, state):
         """
         Convert continuous state values into discrete bins.
@@ -311,9 +310,7 @@ class QLearningAgent(BaseAgent):
                         [self.price_bin_labels[price_idx], action_value, q_value]
                     )
 
-    def save_state_action_history(
-        self, state_action_history, filepath
-    ):
+    def save_state_action_history(self, state_action_history, filepath):
         """Save the state-action history to a JSON file."""
         with open(filepath, "w") as file:
             json.dump(state_action_history, file, default=str)
