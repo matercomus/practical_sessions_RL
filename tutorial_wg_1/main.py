@@ -156,6 +156,7 @@ def main():
     parser.add_argument("--save-model", action="store_true")
     parser.add_argument("--load-model", type=str, default=None)
     parser.add_argument("--plot-interval-days", type=int, default=7)
+    parser.add_argument("--save-state-action-history", action="store_true")
     args = parser.parse_args()
 
     # Create output directory
@@ -181,6 +182,13 @@ def main():
         model_path = os.path.join(output_dir, "model.h5")
         agent.save(model_path)
         print(f"Model saved at {model_path}")
+
+    # Save state-action history if requested
+    if args.save_state_action_history:
+        filename = "state_action_history.json"
+        save_path = os.path.join(output_dir, filename)
+        agent.save_state_action_history(state_action_history, save_path)
+        print(f"State-action history saved at {save_path}")
 
     # Plot metrics if requested
     if args.make_graphs:

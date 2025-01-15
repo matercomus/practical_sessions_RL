@@ -2,8 +2,9 @@ import numpy as np
 import h5py
 import os
 import csv
+import json
 from dataclasses import dataclass
-from typing import Union, List, Tuple, Any, Optional
+from typing import List, Tuple, Any, Optional
 from agent_base import BaseAgent
 
 
@@ -309,3 +310,10 @@ class QLearningAgent(BaseAgent):
                     writer.writerow(
                         [self.price_bin_labels[price_idx], action_value, q_value]
                     )
+
+    def save_state_action_history(
+        self, state_action_history, filepath
+    ):
+        """Save the state-action history to a JSON file."""
+        with open(filepath, "w") as file:
+            json.dump(state_action_history, file, default=str)
