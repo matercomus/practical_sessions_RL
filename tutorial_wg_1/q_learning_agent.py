@@ -67,6 +67,7 @@ class QLearningAgent(BaseAgent):
         storage_bin_size=3,
         price_config: BinningConfig = None,
         model_path: str = None,
+        # TODO: Add optuna and try different values.
     ):
         """Initialize Q-Learning Agent with adaptive binning capabilities."""
         super().__init__()
@@ -84,9 +85,9 @@ class QLearningAgent(BaseAgent):
         self.price_bins, self.price_bin_labels = create_adaptive_bins(price_config)
 
         # Define other bins and action space
-        self.action_space = np.linspace(-1, 1, 21)
+        self.action_space = np.linspace(-1, 1, 3)
         self.storage_bins = np.linspace(0, 170, storage_bin_size)
-        self.hour_bins = np.arange(1, 25)
+        self.hour_bins = np.arange(1, 25) # TODO: maybe make it smaller like morning evening night...
         self.day_bins = np.arange(1, len(env.price_values) + 1)
 
         # Calculate dimensions for Q-table
@@ -105,34 +106,42 @@ class QLearningAgent(BaseAgent):
     def reward_shaping(self, state, action, reward, history):
         """
         Apply reward shaping to the given reward.
-
+    
         Args:
             state: Current state tuple
             action: Action taken
             reward: Original reward
             history: List of previous states and actions
-
+    
         Returns:
             Shaped reward
         """
         if len(history) < 3:
             return reward
-
+    
         # Extract the price and storage from the current state
-        storage, current_price, _, _ = state
-
+        storage, current_price, hour, _ = state
+    
         # Extract the prices from the last 3 steps
         last_prices = [h[0][1] for h in history[-3:]]
-
+    
         # Check if the current price is better than the last 3 prices
         if action > 0 and all(current_price < price for price in last_prices):
             reward += 10
-
+    
         # Add reward for maintaining a high storage level
         if storage > np.mean(self.storage_bins):
             reward += 5
-
+    
+        # Favor carrying over storage if the price is below a certain quantile
+        if hour == 24:  # End of the day
+            price_quantile = np.quantile([h[0][1] for h in history], 0.25)
+            if current_price < price_quantile and storage >= 170:
+                reward += 20
+    
         return reward
+        #NOTE: add 80% of whats in storage. Penalize high storage level (bc it could lead to overpumping and not beaing able to caryry over)
+        # maybe keep it under 50 ish.
 
     def _initialize_q_table(self):
         """Initialize new Q-table"""
