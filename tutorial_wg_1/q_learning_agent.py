@@ -118,8 +118,8 @@ class QLearningAgent(BaseAgent):
         if len(history) < 3:
             return reward
 
-        # Extract the price from the current state
-        _, current_price, _, _ = state
+        # Extract the price and storage from the current state
+        storage, current_price, _, _ = state
 
         # Extract the prices from the last 3 steps
         last_prices = [h[0][1] for h in history[-3:]]
@@ -127,6 +127,10 @@ class QLearningAgent(BaseAgent):
         # Check if the current price is better than the last 3 prices
         if action > 0 and all(current_price < price for price in last_prices):
             reward += 10
+
+        # Add reward for maintaining a high storage level
+        if storage > np.mean(self.storage_bins):
+            reward += 5
 
         return reward
 
