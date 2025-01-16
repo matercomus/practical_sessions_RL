@@ -102,6 +102,34 @@ class QLearningAgent(BaseAgent):
         else:
             self._initialize_q_table()
 
+    def reward_shaping(self, state, action, reward, history):
+        """
+        Apply reward shaping to the given reward.
+
+        Args:
+            state: Current state tuple
+            action: Action taken
+            reward: Original reward
+            history: List of previous states and actions
+
+        Returns:
+            Shaped reward
+        """
+        if len(history) < 3:
+            return reward
+
+        # Extract the price from the current state
+        _, current_price, _, _ = state
+
+        # Extract the prices from the last 3 steps
+        last_prices = [h[0][1] for h in history[-3:]]
+
+        # Check if the current price is better than the last 3 prices
+        if action > 0 and all(current_price < price for price in last_prices):
+            reward += 10
+
+        return reward
+
     def _initialize_q_table(self):
         """Initialize new Q-table"""
         dimensions = (
@@ -131,6 +159,10 @@ class QLearningAgent(BaseAgent):
                 action_idx = self.choose_action(state)
                 action = self.action_space[action_idx]
                 next_state, reward, terminated = env.step(action)
+
+                # Apply reward shaping
+                reward = self.reward_shaping(state, action, reward, episode_history)
+
                 episode_reward += reward
 
                 self.update(state, action_idx, reward, next_state, terminated)
