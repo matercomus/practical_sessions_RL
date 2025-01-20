@@ -88,7 +88,7 @@ class QLearningAgent(BaseAgent):
         self.action_space = np.linspace(-1, 1, 3)
         self.storage_bins = np.linspace(0, 170, storage_bin_size)
         self.hour_bins = np.arange(1, 25, 3)  # 8 bins, each representing a 3-hour period
-        self.day_bins = np.arange(1, len(env.price_values) + 1)
+        self.day_bins = np.arange(1, 8)  # 7 bins, each representing a day of the week
 
         # Calculate dimensions for Q-table
         self.n_storage_bins = len(self.storage_bins)
