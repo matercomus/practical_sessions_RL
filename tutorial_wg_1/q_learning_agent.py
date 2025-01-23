@@ -1,7 +1,6 @@
 import numpy as np
 import h5py
 import os
-import csv
 import json
 from dataclasses import dataclass
 from typing import List, Tuple, Any, Optional
@@ -26,9 +25,7 @@ class QLearningAgent(BaseAgent):
         discount_rate=0.95,
         learning_rate=0.1,
         epsilon_start=1.0,
-        epsilon_end=0.1,  # Increased minimum epsilon
-        storage_bin_size=20,
-        price_config: BinningConfig = None,
+        epsilon_end=0.1,
         model_path: str = None,
     ):
         """Initialize Q-Learning Agent with calculated linear epsilon decay"""
@@ -233,6 +230,11 @@ class QLearningAgent(BaseAgent):
             f.attrs["epsilon"] = self.epsilon
             f.attrs["current_step"] = self.current_step
             f.attrs["total_train_steps"] = self.total_train_steps
+
+    def save_state_action_history(self, state_action_history: List, path: str):
+        """Save the state-action history to a JSON file"""
+        with open(path, "w") as f:
+            json.dump(state_action_history, f)
 
     def load(self, path: str):
         """Load the Q-table and training state"""

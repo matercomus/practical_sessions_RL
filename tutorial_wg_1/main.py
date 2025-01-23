@@ -73,7 +73,7 @@ def plot_agent_behavior(
                 continue
 
             states, actions = zip(*interval_history)
-            storage, price, hour = zip(*[state[:3] for state in states])
+            storage, price, _ = zip(*[state[:3] for state in states])
 
             time_labels = [
                 f"Day {i // hours_per_day + 1}, {str(timedelta(hours=i % hours_per_day))[:-3]}"
@@ -93,7 +93,7 @@ def plot_agent_behavior(
                 rotation=45,
                 ha="right",
             )
-            plt.xlabel(f"Time (days and hours)")
+            plt.xlabel("Time (days and hours)")
             plt.ylabel("Storage")
             plt.title(
                 f"Episode {episode_idx + 1}, Interval {interval_start // steps_per_interval + 1} - Storage"
@@ -109,7 +109,7 @@ def plot_agent_behavior(
                 rotation=45,
                 ha="right",
             )
-            plt.xlabel(f"Time (days and hours)")
+            plt.xlabel("Time (days and hours)")
             plt.ylabel("Price")
             plt.title(
                 f"Episode {episode_idx + 1}, Interval {interval_start // steps_per_interval + 1} - Price"
@@ -125,7 +125,7 @@ def plot_agent_behavior(
                 rotation=45,
                 ha="right",
             )
-            plt.xlabel(f"Time (days and hours)")
+            plt.xlabel("Time (days and hours)")
             plt.ylabel("Action")
             plt.title(
                 f"Episode {episode_idx + 1}, Interval {interval_start // steps_per_interval + 1} - Action"
