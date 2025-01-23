@@ -2,20 +2,8 @@ import numpy as np
 import h5py
 import os
 import json
-from dataclasses import dataclass
 from typing import List, Tuple, Any, Optional
 from agent_base import BaseAgent
-
-
-@dataclass
-class BinningConfig:
-    """Configuration for feature binning with min/max bins"""
-
-    min_threshold: float
-    max_threshold: float
-    n_bins: int
-    min_label: str = None
-    max_label: str = None
 
 
 class QLearningAgent(BaseAgent):
