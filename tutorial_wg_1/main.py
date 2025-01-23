@@ -22,7 +22,6 @@ def main():
     parser.add_argument("--episodes", type=int, default=1000)
     parser.add_argument("--validate-every", type=int, default=50)
     parser.add_argument("--make-graphs", action="store_true")
-    parser.add_argument("--save-model", action="store_true")
     parser.add_argument("--load-model", type=str, default=None)
     parser.add_argument("--plot-interval-days", type=int, default=7)
     parser.add_argument("--save-state-action-history", action="store_true")
@@ -46,11 +45,10 @@ def main():
         val_env=val_env,
     )
 
-    # Save model if requested
-    if args.save_model:
-        model_path = os.path.join(output_dir, "model.h5")
-        agent.save(model_path)
-        print(f"Model saved at {model_path}")
+    # Save model
+    model_path = os.path.join(output_dir, "model.h5")
+    agent.save(model_path)
+    print(f"Model saved at {model_path}")
 
     # Save state-action history if requested
     if args.save_state_action_history:
