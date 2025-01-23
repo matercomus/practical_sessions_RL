@@ -1,5 +1,6 @@
 from env import DataCenterEnv
 from q_learning_agent import QLearningAgent
+from DQN_testing import DeepQLearningAgent
 import argparse
 import matplotlib.pyplot as plt
 import os
@@ -167,7 +168,7 @@ def main():
     val_env = DataCenterEnv(args.val_path) if args.validate_every else None
 
     # Initialize agent
-    agent = QLearningAgent(train_env, model_path=args.load_model)
+    agent = DeepQLearningAgent(train_env, model_path=args.load_model)
 
     # Train agent
     training_rewards, validation_rewards, state_action_history = agent.train(
