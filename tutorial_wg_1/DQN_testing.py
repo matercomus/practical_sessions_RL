@@ -17,9 +17,23 @@ class DQN(nn.Module):
             nn.ReLU(),
             nn.Linear(128, output_dim)
         )
-    
+
     def forward(self, x):
         return self.network(x)
+
+class ExperienceReplayBuffer:
+    def __init__(self, capacity):
+        self.buffer = deque(maxlen=capacity)
+
+    def add(self, transition):
+        self.buffer.append(transition)
+
+    def sample(self, batch_size):
+        batch = random.sample(self.buffer, batch_size)
+        return zip(*batch)
+
+    def __len__(self):
+        return len(self.buffer)
 
 class DeepQLearningAgent(BaseAgent):
     def __init__(
@@ -48,12 +62,13 @@ class DeepQLearningAgent(BaseAgent):
 
         # Networks
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.policy_net = DQN(4, 21).to(self.device)
-        self.target_net = DQN(4, 21).to(self.device)
+        self.policy_net = DQN(4, 3).to(self.device)  # 3 actions: sell all, do nothing, buy all
+        self.target_net = DQN(4, 3).to(self.device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
+        self.target_net.eval()
 
         self.optimizer = optim.Adam(self.policy_net.parameters(), lr=learning_rate)
-        self.memory = deque(maxlen=memory_size)
+        self.memory = ExperienceReplayBuffer(memory_size)
         self.steps = 0
         self.target_update = target_update
 
@@ -69,28 +84,23 @@ class DeepQLearningAgent(BaseAgent):
             day / 7.0
         ], dtype=np.float32)
 
-    def _get_storage_reward(self, storage):
-        return 0.5 if 30 <= storage <= 50 else 0
-
     def choose_action(self, state):
         if random.random() < self.epsilon:
-            action_idx = random.randint(0, 20)
+            action_idx = random.randint(0, 2)  # 3 actions: 0, 1, 2
         else:
             state_tensor = torch.FloatTensor(self._normalize_state(state)).unsqueeze(0).to(self.device)
             with torch.no_grad():
                 q_values = self.policy_net(state_tensor)
                 action_idx = q_values.max(1)[1].item()
 
-        return action_idx * 0.1 - 1.0
+        return action_idx  # Action indices map directly to sell all, do nothing, or buy all
 
     def update(self, state, action, reward, next_state, done):
-        action_idx = int((action + 1.0) * 10)
-        reward += self._get_storage_reward(state[0])
         reward = reward / 10.0  # Normalize reward
 
-        self.memory.append((
+        self.memory.add((
             self._normalize_state(state),
-            action_idx,
+            action,
             reward,
             self._normalize_state(next_state),
             done
@@ -106,21 +116,24 @@ class DeepQLearningAgent(BaseAgent):
             self.target_net.load_state_dict(self.policy_net.state_dict())
 
     def _update_network(self):
-        batch = random.sample(self.memory, self.batch_size)
-        batch = list(zip(*batch))
+        states, actions, rewards, next_states, dones = self.memory.sample(self.batch_size)
 
-        states = torch.FloatTensor(np.array(batch[0])).to(self.device)
-        actions = torch.LongTensor(batch[1]).to(self.device)
-        rewards = torch.FloatTensor(batch[2]).to(self.device)
-        next_states = torch.FloatTensor(np.array(batch[3])).to(self.device)
-        dones = torch.BoolTensor(batch[4]).to(self.device)
+        states = torch.FloatTensor(np.array(states)).to(self.device)
+        actions = torch.LongTensor(actions).to(self.device)
+        rewards = torch.FloatTensor(rewards).to(self.device)
+        next_states = torch.FloatTensor(np.array(next_states)).to(self.device)
+        dones = torch.BoolTensor(dones).to(self.device)
 
+        # Current Q-values
         current_q_values = self.policy_net(states).gather(1, actions.unsqueeze(1))
 
+        # Double Q-Learning target Q-values
         with torch.no_grad():
-            max_next_q_values = self.target_net(next_states).max(1)[0]
+            next_actions = self.policy_net(next_states).max(1)[1].unsqueeze(1)
+            max_next_q_values = self.target_net(next_states).gather(1, next_actions).squeeze(1)
             target_q_values = rewards + self.discount_rate * max_next_q_values * (~dones)
 
+        # Loss calculation
         loss = nn.MSELoss()(current_q_values.squeeze(), target_q_values)
 
         self.optimizer.zero_grad()
