@@ -65,6 +65,27 @@ class QLearningAgent(BaseAgent):
         else:
             self._initialize_q_table()
 
+    def print_and_save_q_table_stats(self, path: str):
+        """Print Q-table statistics and save to JSON"""
+        stats = {
+            "Storage bins": self.n_storage_bins,
+            "Price bins": self.n_price_bins,
+            "Hour bins": self.n_hour_bins,
+            "Day bins": self.n_day_bins,
+            "Actions": self.n_actions,
+            "Q-table shape": self.Q_table.shape,
+            "Total parameters": self.Q_table.size,
+        }
+
+        print("Q-table dimensions:")
+        for key, value in stats.items():
+            print(f"{key}: {value}")
+
+        if path:
+            stats_path = os.path.join(path, "q_table_stats.json")
+            with open(stats_path, "w") as json_file:
+                json.dump(stats, json_file, indent=4)
+
     def _initialize_q_table(self):
         """Initialize new Q-table"""
         dimensions = (

@@ -37,6 +37,10 @@ def main():
     # Initialize agent
     agent = QLearningAgent(train_env, model_path=args.load_model)
 
+    # Print and save q table stats if agent has this mehtod
+    if hasattr(agent, "print_and_save_q_table_stats"):
+        agent.print_and_save_q_table_stats(output_dir)
+
     # Train agent
     training_rewards, validation_rewards, state_action_history = agent.train(
         train_env,
