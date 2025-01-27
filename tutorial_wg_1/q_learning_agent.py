@@ -1,22 +1,9 @@
 import numpy as np
 import h5py
 import os
-import csv
 import json
-from dataclasses import dataclass
 from typing import List, Tuple, Any, Optional
 from agent_base import BaseAgent
-
-
-@dataclass
-class BinningConfig:
-    """Configuration for feature binning with min/max bins"""
-
-    min_threshold: float
-    max_threshold: float
-    n_bins: int
-    min_label: str = None
-    max_label: str = None
 
 
 class QLearningAgent(BaseAgent):
@@ -26,9 +13,7 @@ class QLearningAgent(BaseAgent):
         discount_rate=0.95,
         learning_rate=0.1,
         epsilon_start=1.0,
-        epsilon_end=0.1,  # Increased minimum epsilon
-        storage_bin_size=20,
-        price_config: BinningConfig = None,
+        epsilon_end=0.1,
         model_path: str = None,
     ):
         """Initialize Q-Learning Agent with calculated linear epsilon decay"""
@@ -79,6 +64,27 @@ class QLearningAgent(BaseAgent):
             self.load(model_path)
         else:
             self._initialize_q_table()
+
+    def print_and_save_q_table_stats(self, path: str):
+        """Print Q-table statistics and save to JSON"""
+        stats = {
+            "Storage bins": self.n_storage_bins,
+            "Price bins": self.n_price_bins,
+            "Hour bins": self.n_hour_bins,
+            "Day bins": self.n_day_bins,
+            "Actions": self.n_actions,
+            "Q-table shape": self.Q_table.shape,
+            "Total parameters": self.Q_table.size,
+        }
+
+        print("Q-table dimensions:")
+        for key, value in stats.items():
+            print(f"{key}: {value}")
+
+        if path:
+            stats_path = os.path.join(path, "q_table_stats.json")
+            with open(stats_path, "w") as json_file:
+                json.dump(stats, json_file, indent=4)
 
     def _initialize_q_table(self):
         """Initialize new Q-table"""
@@ -233,6 +239,11 @@ class QLearningAgent(BaseAgent):
             f.attrs["epsilon"] = self.epsilon
             f.attrs["current_step"] = self.current_step
             f.attrs["total_train_steps"] = self.total_train_steps
+
+    def save_state_action_history(self, state_action_history: List, path: str):
+        """Save the state-action history to a JSON file"""
+        with open(path, "w") as f:
+            json.dump(state_action_history, f)
 
     def load(self, path: str):
         """Load the Q-table and training state"""
