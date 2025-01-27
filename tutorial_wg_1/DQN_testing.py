@@ -5,7 +5,9 @@ import torch.optim as optim
 from collections import deque
 import random
 import os
+import json
 from agent_base import BaseAgent
+
 
 class DQN(nn.Module):
     def __init__(self, input_dim, output_dim):
@@ -15,11 +17,12 @@ class DQN(nn.Module):
             nn.ReLU(),
             nn.Linear(64, 128),
             nn.ReLU(),
-            nn.Linear(128, output_dim)
+            nn.Linear(128, output_dim),
         )
 
     def forward(self, x):
         return self.network(x)
+
 
 class ExperienceReplayBuffer:
     def __init__(self, capacity):
@@ -35,6 +38,7 @@ class ExperienceReplayBuffer:
     def __len__(self):
         return len(self.buffer)
 
+
 class DeepQLearningAgent(BaseAgent):
     def __init__(
         self,
@@ -47,7 +51,7 @@ class DeepQLearningAgent(BaseAgent):
         batch_size=128,
         memory_size=20000,
         target_update=500,
-        model_path=None
+        model_path=None,
     ):
         self.env = env
         self.discount_rate = discount_rate
@@ -62,7 +66,9 @@ class DeepQLearningAgent(BaseAgent):
 
         # Networks
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.policy_net = DQN(4, 3).to(self.device)  # 3 actions: sell all, do nothing, buy all
+        self.policy_net = DQN(4, 3).to(
+            self.device
+        )  # 3 actions: sell all, do nothing, buy all
         self.target_net = DQN(4, 3).to(self.device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
@@ -77,18 +83,25 @@ class DeepQLearningAgent(BaseAgent):
 
     def _normalize_state(self, state):
         storage, price, hour, day = state
-        return np.array([
-            storage / self.storage_scale,
-            price / self.price_scale,
-            hour / 24.0,
-            day / 7.0
-        ], dtype=np.float32)
+        return np.array(
+            [
+                storage / self.storage_scale,
+                price / self.price_scale,
+                hour / 24.0,
+                day / 7.0,
+            ],
+            dtype=np.float32,
+        )
 
     def choose_action(self, state):
         if random.random() < self.epsilon:
             action_idx = random.randint(0, 2)  # 3 actions: 0, 1, 2
         else:
-            state_tensor = torch.FloatTensor(self._normalize_state(state)).unsqueeze(0).to(self.device)
+            state_tensor = (
+                torch.FloatTensor(self._normalize_state(state))
+                .unsqueeze(0)
+                .to(self.device)
+            )
             with torch.no_grad():
                 q_values = self.policy_net(state_tensor)
                 action_idx = q_values.max(1)[1].item()
@@ -98,13 +111,15 @@ class DeepQLearningAgent(BaseAgent):
     def update(self, state, action, reward, next_state, done):
         reward = reward / 10.0  # Normalize reward
 
-        self.memory.add((
-            self._normalize_state(state),
-            action,
-            reward,
-            self._normalize_state(next_state),
-            done
-        ))
+        self.memory.add(
+            (
+                self._normalize_state(state),
+                action,
+                reward,
+                self._normalize_state(next_state),
+                done,
+            )
+        )
 
         self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)
 
@@ -116,7 +131,9 @@ class DeepQLearningAgent(BaseAgent):
             self.target_net.load_state_dict(self.policy_net.state_dict())
 
     def _update_network(self):
-        states, actions, rewards, next_states, dones = self.memory.sample(self.batch_size)
+        states, actions, rewards, next_states, dones = self.memory.sample(
+            self.batch_size
+        )
 
         states = torch.FloatTensor(np.array(states)).to(self.device)
         actions = torch.LongTensor(actions).to(self.device)
@@ -130,8 +147,12 @@ class DeepQLearningAgent(BaseAgent):
         # Double Q-Learning target Q-values
         with torch.no_grad():
             next_actions = self.policy_net(next_states).max(1)[1].unsqueeze(1)
-            max_next_q_values = self.target_net(next_states).gather(1, next_actions).squeeze(1)
-            target_q_values = rewards + self.discount_rate * max_next_q_values * (~dones)
+            max_next_q_values = (
+                self.target_net(next_states).gather(1, next_actions).squeeze(1)
+            )
+            target_q_values = rewards + self.discount_rate * max_next_q_values * (
+                ~dones
+            )
 
         # Loss calculation
         loss = nn.MSELoss()(current_q_values.squeeze(), target_q_values)
@@ -169,7 +190,9 @@ class DeepQLearningAgent(BaseAgent):
 
             env.reset()
 
-            print(f"Episode {episode + 1}: Reward = {episode_reward:.2f}, Epsilon = {self.epsilon:.4f}")
+            print(
+                f"Episode {episode + 1}: Reward = {episode_reward:.2f}, Epsilon = {self.epsilon:.4f}"
+            )
 
         return training_rewards, validation_rewards, state_action_history
 
@@ -196,18 +219,25 @@ class DeepQLearningAgent(BaseAgent):
         return total_reward / num_episodes
 
     def save(self, path):
-        torch.save({
-            'policy_net_state_dict': self.policy_net.state_dict(),
-            'target_net_state_dict': self.target_net.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'epsilon': self.epsilon,
-            'steps': self.steps
-        }, path)
+        torch.save(
+            {
+                "policy_net_state_dict": self.policy_net.state_dict(),
+                "target_net_state_dict": self.target_net.state_dict(),
+                "optimizer_state_dict": self.optimizer.state_dict(),
+                "epsilon": self.epsilon,
+                "steps": self.steps,
+            },
+            path,
+        )
 
     def load(self, path):
         checkpoint = torch.load(path)
-        self.policy_net.load_state_dict(checkpoint['policy_net_state_dict'])
-        self.target_net.load_state_dict(checkpoint['target_net_state_dict'])
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        self.epsilon = checkpoint['epsilon']
-        self.steps = checkpoint['steps']
+        self.policy_net.load_state_dict(checkpoint["policy_net_state_dict"])
+        self.target_net.load_state_dict(checkpoint["target_net_state_dict"])
+        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        self.epsilon = checkpoint["epsilon"]
+        self.steps = checkpoint["steps"]
+
+    def save_state_action_history(self, state_action_history, save_path):
+        with open(save_path, "w") as f:
+            json.dump(state_action_history, f)

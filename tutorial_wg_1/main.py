@@ -36,6 +36,7 @@ def main():
     val_env = DataCenterEnv(args.val_path) if args.validate_every else None
 
     # Initialize agent
+    # agent = DeepQLearningAgent(train_env, model_path=args.load_model)
     agent = DeepQLearningAgent(train_env, model_path=args.load_model)
 
     # Print and save q table stats if agent has this mehtod
