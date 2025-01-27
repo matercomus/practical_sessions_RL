@@ -6,7 +6,12 @@ from collections import deque
 import random
 import os
 import json
+import logging
 from agent_base import BaseAgent
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 class DQN(nn.Module):
@@ -47,7 +52,7 @@ class DeepQLearningAgent(BaseAgent):
         learning_rate=0.005,
         epsilon_start=1.0,
         epsilon_end=0.01,
-        epsilon_decay=0.99,
+        epsilon_decay_episodes=400,
         batch_size=128,
         memory_size=20000,
         target_update=500,
@@ -55,9 +60,10 @@ class DeepQLearningAgent(BaseAgent):
     ):
         self.env = env
         self.discount_rate = discount_rate
-        self.epsilon = epsilon_start
+        self.epsilon_start = epsilon_start
         self.epsilon_end = epsilon_end
-        self.epsilon_decay = epsilon_decay
+        self.epsilon_decay_episodes = epsilon_decay_episodes
+        self.epsilon = epsilon_start
         self.batch_size = batch_size
 
         # Normalization parameters
@@ -81,6 +87,8 @@ class DeepQLearningAgent(BaseAgent):
         if model_path and os.path.exists(model_path):
             self.load(model_path)
 
+        logger.info("DeepQLearningAgent initialized")
+
     def _normalize_state(self, state):
         storage, price, hour, day = state
         return np.array(
@@ -96,6 +104,7 @@ class DeepQLearningAgent(BaseAgent):
     def choose_action(self, state):
         if random.random() < self.epsilon:
             action_idx = random.randint(0, 2)  # 3 actions: 0, 1, 2
+            logger.debug(f"Choosing random action: {action_idx}")
         else:
             state_tensor = (
                 torch.FloatTensor(self._normalize_state(state))
@@ -105,8 +114,10 @@ class DeepQLearningAgent(BaseAgent):
             with torch.no_grad():
                 q_values = self.policy_net(state_tensor)
                 action_idx = q_values.max(1)[1].item()
+            logger.debug(f"Choosing action from policy: {action_idx}")
 
-        return action_idx  # Action indices map directly to sell all, do nothing, or buy all
+        action = action_idx - 1  # Map 0, 1, 2 to -1, 0, 1
+        return action  # Action indices map directly to sell all, do nothing, or buy all
 
     def update(self, state, action, reward, next_state, done):
         reward = reward / 10.0  # Normalize reward
@@ -114,14 +125,12 @@ class DeepQLearningAgent(BaseAgent):
         self.memory.add(
             (
                 self._normalize_state(state),
-                action,
+                action + 1,  # Map -1, 0, 1 to 0, 1, 2 for storage
                 reward,
                 self._normalize_state(next_state),
                 done,
             )
         )
-
-        self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)
 
         if len(self.memory) >= self.batch_size:
             self._update_network()
@@ -161,6 +170,8 @@ class DeepQLearningAgent(BaseAgent):
         loss.backward()
         self.optimizer.step()
 
+        logger.debug(f"Updated network with loss: {loss.item()}")
+
     def train(self, env, episodes, validate_every=None, val_env=None):
         training_rewards = []
         validation_rewards = []
@@ -190,9 +201,17 @@ class DeepQLearningAgent(BaseAgent):
 
             env.reset()
 
-            print(
+            logger.info(
                 f"Episode {episode + 1}: Reward = {episode_reward:.2f}, Epsilon = {self.epsilon:.4f}"
             )
+
+            # Update epsilon linearly
+            if episode < self.epsilon_decay_episodes:
+                self.epsilon = self.epsilon_start - (
+                    episode / self.epsilon_decay_episodes
+                ) * (self.epsilon_start - self.epsilon_end)
+            else:
+                self.epsilon = self.epsilon_end
 
         return training_rewards, validation_rewards, state_action_history
 
@@ -216,7 +235,9 @@ class DeepQLearningAgent(BaseAgent):
             env.reset()
 
         self.epsilon = original_epsilon
-        return total_reward / num_episodes
+        avg_reward = total_reward / num_episodes
+        logger.info(f"Validation: Average Reward = {avg_reward:.2f}")
+        return avg_reward
 
     def save(self, path):
         torch.save(
@@ -229,6 +250,7 @@ class DeepQLearningAgent(BaseAgent):
             },
             path,
         )
+        logger.info(f"Model saved to {path}")
 
     def load(self, path):
         checkpoint = torch.load(path)
@@ -237,7 +259,9 @@ class DeepQLearningAgent(BaseAgent):
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         self.epsilon = checkpoint["epsilon"]
         self.steps = checkpoint["steps"]
+        logger.info(f"Model loaded from {path}")
 
     def save_state_action_history(self, state_action_history, save_path):
         with open(save_path, "w") as f:
             json.dump(state_action_history, f)
+        logger.info(f"State-action history saved to {save_path}")
