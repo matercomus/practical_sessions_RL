@@ -12,7 +12,7 @@ from agent_base import BaseAgent
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
-#logging.basicConfig(level=logging.DEBUG)
+# logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
@@ -152,12 +152,11 @@ class DeepQLearningAgent(BaseAgent):
                     action = 0  # Disallow sell, set to do nothing
                     logger.debug("Disallowed sell. Setting action to 0.")
 
+        logger.debug(f"Chose action: {action}")
         return action
 
     # TODO:
     # Reward shaping
-    # Same as heuristic (buy when price is low/ under threashold) or sell when price is high/ above threashold.
-    # Aslo reward storage above 50.
     # reward buying between hours 1 and 6 ish.
 
     def reward_shaping(self, state, action, reward, next_state):
@@ -168,33 +167,10 @@ class DeepQLearningAgent(BaseAgent):
         # Normalize the reward
         reward = reward / reward_scale
 
-        # Define thresholds
-        price_threshold_low = 0.3 * self.price_scale  # Example threshold for low price
-        price_threshold_high = (
-            0.7 * self.price_scale
-        )  # Example threshold for high price
-
-        # Encourage buying between hours 1 and 8
-        if action == 1 and 1 <= hour <= 8:
-            reward += 1.0
-
-        # Reward for selling when price is high
-        if action == -1 and price > price_threshold_high:
-            reward += 1.0
-
-        # Penalize for buying when price is high
-        if action == 1 and price > price_threshold_high:
-            reward -= 1.0
-
-        # Penalize for selling when price is low
-        if action == -1 and price < price_threshold_low:
-            reward -= 1.0
-
-        # Ensure rewards are generally negative for buying and positive for selling
-        if action == 1:
-            reward -= 0.5
-        elif action == -1:
-            reward += 0.5
+        # Encourage buying between hours
+        buy_hours = range(1, 9)
+        if hour in buy_hours and action == 1:
+            reward *= 0.25
 
         logger.debug(f"Reward normal: {original_reward}")
         logger.debug(f"Reward reshaped: {reward}")
