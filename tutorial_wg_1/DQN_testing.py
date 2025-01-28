@@ -9,10 +9,8 @@ import json
 import logging
 from agent_base import BaseAgent
 
-
 # Configure logging
 logging.basicConfig(level=logging.INFO)
-# logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
@@ -155,10 +153,6 @@ class DeepQLearningAgent(BaseAgent):
         logger.debug(f"Chose action: {action}")
         return action
 
-    # TODO:
-    # Reward shaping
-    # reward buying between hours 1 and 6 ish.
-
     def reward_shaping(self, state, action, reward, next_state):
         _, price, hour, _ = state
         original_reward = reward
@@ -236,6 +230,7 @@ class DeepQLearningAgent(BaseAgent):
         logger.debug(f"Updated network with loss: {loss.item()}")
 
     def train(self, env, episodes, validate_every=None, val_env=None):
+        logger.info("Starting training")
         training_rewards = []
         validation_rewards = []
         state_action_history = []
@@ -278,9 +273,11 @@ class DeepQLearningAgent(BaseAgent):
             else:
                 self.epsilon = self.epsilon_end
 
+        logger.info("Training completed")
         return training_rewards, validation_rewards, state_action_history
 
     def validate(self, env, num_episodes=10):
+        logger.info("Starting validation")
         total_reward = 0
         original_epsilon = self.epsilon
         self.epsilon = 0
