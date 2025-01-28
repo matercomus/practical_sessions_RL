@@ -9,11 +9,6 @@ import json
 import logging
 from agent_base import BaseAgent
 
-# TODO:
-# Reward shaping
-# Same as heuristic (buy when price is low/ under threashold) or sell when price is high/ above threashold.
-# Aslo reward storage above 50.
-# reward buying between hours 1 and 6 ish.
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -159,6 +154,12 @@ class DeepQLearningAgent(BaseAgent):
 
         return action
 
+    # TODO:
+    # Reward shaping
+    # Same as heuristic (buy when price is low/ under threashold) or sell when price is high/ above threashold.
+    # Aslo reward storage above 50.
+    # reward buying between hours 1 and 6 ish.
+
     def reward_shaping(self, state, action, reward, next_state):
         _, price, hour, _ = state
         original_reward = reward
@@ -195,8 +196,8 @@ class DeepQLearningAgent(BaseAgent):
         elif action == -1:
             reward += 0.5
 
-        logger.info(f"Reward normal: {original_reward}")
-        logger.info(f"Reward reshaped: {reward}")
+        logger.debug(f"Reward normal: {original_reward}")
+        logger.debug(f"Reward reshaped: {reward}")
         return reward
 
     def update(self, state, action, reward, next_state, done):
