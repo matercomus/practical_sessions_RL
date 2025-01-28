@@ -2,14 +2,13 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from collections import deque
 import random
 import os
 import json
 import logging
 from agent_base import BaseAgent
 
-# Configure logging
+# Configure logging - only enable info and error by default for performance
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -17,17 +16,22 @@ logger = logging.getLogger(__name__)
 class DQN(nn.Module):
     def __init__(self, input_dim, output_dim):
         super(DQN, self).__init__()
+        # Simplified network architecture with proper initialization for better training
         self.network = nn.Sequential(
             nn.Linear(input_dim, 128),
             nn.ReLU(),
             nn.Linear(128, 256),
             nn.ReLU(),
-            nn.Linear(256, 256),
-            nn.ReLU(),
             nn.Linear(256, 128),
             nn.ReLU(),
             nn.Linear(128, output_dim),
         )
+
+        # Initialize weights using Xavier initialization
+        for layer in self.network:
+            if isinstance(layer, nn.Linear):
+                nn.init.xavier_uniform_(layer.weight)
+                nn.init.zeros_(layer.bias)
 
     def forward(self, x):
         return self.network(x)
@@ -35,17 +39,23 @@ class DQN(nn.Module):
 
 class ExperienceReplayBuffer:
     def __init__(self, capacity):
-        self.buffer = deque(maxlen=capacity)
+        self.buffer = np.zeros(capacity, dtype=object)  # Pre-allocate buffer
+        self.capacity = capacity
+        self.position = 0
+        self.size = 0
 
     def add(self, transition):
-        self.buffer.append(transition)
+        self.buffer[self.position] = transition
+        self.position = (self.position + 1) % self.capacity
+        self.size = min(self.size + 1, self.capacity)
 
     def sample(self, batch_size):
-        batch = random.sample(self.buffer, batch_size)
+        indices = np.random.choice(self.size, batch_size, replace=False)
+        batch = self.buffer[indices]
         return zip(*batch)
 
     def __len__(self):
-        return len(self.buffer)
+        return self.size
 
 
 class DeepQLearningAgent(BaseAgent):
@@ -53,13 +63,14 @@ class DeepQLearningAgent(BaseAgent):
         self,
         env,
         discount_rate=0.75,
-        learning_rate=0.01,
+        learning_rate=0.001,  # Reduced learning rate for stability
         epsilon_start=1.0,
         epsilon_end=0.01,
         epsilon_decay_episodes=3,
         batch_size=128,
         memory_size=20000,
         target_update=500,
+        update_frequency=4,  # New parameter for controlling update frequency
         model_path=None,
     ):
         self.env = env
@@ -69,25 +80,29 @@ class DeepQLearningAgent(BaseAgent):
         self.epsilon_decay_episodes = epsilon_decay_episodes
         self.epsilon = epsilon_start
         self.batch_size = batch_size
+        self.update_frequency = update_frequency
 
-        # Environment-specific parameters
-        self.daily_energy_demand = 120.0  # MWh
-        self.max_power_rate = 10.0  # MW
-
-        # Normalization parameters
+        # Cache environment parameters
+        self.daily_energy_demand = 120.0
+        self.max_power_rate = 10.0
         self.storage_scale = 170.0
         self.price_scale = np.percentile(self.env.price_values.flatten(), 99)
 
-        # Networks
+        # Pre-calculate day statistics
+        self.day_stats_cache = self._precalculate_day_statistics()
+
+        # Initialize networks and optimize for GPU if available
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.policy_net = DQN(4, 3).to(
-            self.device
-        )  # 3 actions: sell all, do nothing, buy all
+        self.policy_net = DQN(4, 3).to(self.device)
         self.target_net = DQN(4, 3).to(self.device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
-        self.target_net.eval()
+        self.target_net.eval()  # Set target network to evaluation mode
 
-        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=learning_rate)
+        # Use Adam optimizer with improved parameters
+        self.optimizer = optim.Adam(
+            self.policy_net.parameters(), lr=learning_rate, betas=(0.9, 0.999), eps=1e-8
+        )
+
         self.memory = ExperienceReplayBuffer(memory_size)
         self.steps = 0
         self.target_update = target_update
@@ -95,16 +110,29 @@ class DeepQLearningAgent(BaseAgent):
         if model_path and os.path.exists(model_path):
             self.load(model_path)
 
-        logger.info("DeepQLearningAgent initialized")
+        logger.info(f"DeepQLearningAgent initialized on device: {self.device}")
+
+    def _precalculate_day_statistics(self):
+        """Pre-calculate statistics for each day to avoid repeated calculations"""
+        stats_cache = {}
+        for day in range(len(self.env.price_values)):
+            day_prices = self.env.price_values[day]
+            stats_cache[day + 1] = {
+                "mean": np.mean(day_prices),
+                "median": np.median(day_prices),
+                "percentile_75": np.percentile(day_prices, 75),
+                "percentile_25": np.percentile(day_prices, 25),
+            }
+        return stats_cache
 
     def _normalize_state(self, state):
-        storage, price, hour, day = state
+        """Vectorized state normalization"""
         return np.array(
             [
-                storage / self.storage_scale,
-                price / self.price_scale,
-                hour / 24.0,
-                day / 7.0,
+                state[0] / self.storage_scale,
+                state[1] / self.price_scale,
+                state[2] / 24.0,
+                state[3] / 7.0,
             ],
             dtype=np.float32,
         )
@@ -118,209 +146,84 @@ class DeepQLearningAgent(BaseAgent):
 
         # Force buy condition
         if shortfall > max_possible_buy:
-            action = 1  # Maps to action index 2 (buy)
-            logger.debug("Force buy required. Choosing action 1.")
-        else:
-            # Epsilon-greedy action selection
-            if random.random() < self.epsilon:
-                action_idx = random.randint(0, 2)
-                action = action_idx - 1
-                logger.debug(f"Choosing random action: {action}")
-            else:
-                state_tensor = (
-                    torch.FloatTensor(self._normalize_state(state))
-                    .unsqueeze(0)
-                    .to(self.device)
-                )
-                with torch.no_grad():
-                    q_values = self.policy_net(state_tensor)
-                    action_idx = q_values.max(1)[1].item()
-                action = action_idx - 1
-                logger.debug(f"Choosing action from policy: {action}")
+            return 1  # Buy action
 
-            # Check if selling is disallowed
-            if action == -1:
-                sell_amount = self.max_power_rate
-                potential_storage = storage - sell_amount
-                potential_shortfall = self.daily_energy_demand - potential_storage
-                hours_left_after = hours_left - 1
-                max_buy_after = hours_left_after * self.max_power_rate
+        # Epsilon-greedy action selection
+        if random.random() < self.epsilon:
+            return random.randint(-1, 1)
 
-                if potential_shortfall > max_buy_after:
-                    action = 0  # Disallow sell, set to do nothing
-                    logger.debug("Disallowed sell. Setting action to 0.")
+        # Get action from policy network
+        with torch.no_grad():
+            state_tensor = (
+                torch.FloatTensor(self._normalize_state(state))
+                .unsqueeze(0)
+                .to(self.device)
+            )
+            q_values = self.policy_net(state_tensor)
+            action = q_values.max(1)[1].item() - 1
 
-        logger.debug(f"Chose action: {action}")
+        # Check if selling is disallowed
+        if action == -1:
+            sell_amount = self.max_power_rate
+            potential_storage = storage - sell_amount
+            potential_shortfall = self.daily_energy_demand - potential_storage
+            hours_left_after = hours_left - 1
+            max_buy_after = hours_left_after * self.max_power_rate
+
+            if potential_shortfall > max_buy_after:
+                action = 0  # Disallow sell
+
         return action
 
     def reward_shaping(self, state, action, reward, next_state):
+        """Simplified reward shaping with minimal logging"""
         storage, price, hour, day = state
         next_storage, next_price, next_hour, next_day = next_state
-        original_reward = reward
-        reward_scale = 1000.0  # Base scaling factor
+        reward_scale = 1000.0
 
-        # Initialize logging dictionary to track all components
-        reward_components = {
-            "original_reward": original_reward,
-            "normalized_reward": reward / reward_scale,
-            "storage_penalty": 0,
-            "time_multiplier": 1.0,
-            "emergency_penalty": 0,
-            "price_bonus": 0,
-            "completion_bonus": 0,
-        }
+        # Base reward normalization
+        shaped_reward = reward / reward_scale
 
-        logger.debug(
-            f"\nProcessing reward shaping for state: Storage={storage:.2f}, Price={price:.2f}, Hour={hour}, Day={day}"
-        )
-        logger.debug(
-            f"Action taken: {action:.2f}, Original reward: {original_reward:.2f}"
-        )
-
-        # Normalize the base reward (financial return)
-        reward = reward / reward_scale
-
-        # Calculate remaining hours in the day
+        # Critical components only
         hours_left = 24 - hour if hour < 24 else 0
-        logger.debug(f"Hours left in day: {hours_left}")
-
-        # Calculate current shortfall from daily requirement
         shortfall = max(0, self.daily_energy_demand - storage)
-        logger.debug(f"Current shortfall: {shortfall:.2f} MWh")
 
-        # 1. Storage Level Management Component
+        # Storage management penalty
         storage_ratio = storage / self.daily_energy_demand
-        target_ratio = hour / 24.0  # Linear target ratio throughout the day
-        storage_deviation = abs(storage_ratio - target_ratio)
-        storage_penalty = -storage_deviation * 0.2
-        reward_components["storage_penalty"] = storage_penalty
+        target_ratio = hour / 24.0
+        storage_penalty = -abs(storage_ratio - target_ratio) * 0.2
+        shaped_reward += storage_penalty
 
-        logger.debug(
-            f"Storage ratio: {storage_ratio:.2f}, Target ratio: {target_ratio:.2f}"
-        )
-        logger.debug(
-            f"Storage deviation: {storage_deviation:.2f}, Penalty: {storage_penalty:.2f}"
-        )
-
-        # 2. Time-Aware Buying Incentive
-        buy_hours = set(range(1, 9))  # Hours 1-8
-        time_multiplier = 1.2 if hour in buy_hours else 1.0
-        reward_components["time_multiplier"] = time_multiplier
-
-        logger.debug(
-            f"Hour {hour} {'is' if hour in buy_hours else 'is not'} in buy hours"
-        )
-        logger.debug(f"Time multiplier: {time_multiplier:.2f}")
-
-        # 3. Emergency Prevention Reward
+        # Emergency prevention
         safety_margin = self.max_power_rate * hours_left
-        emergency_threshold = shortfall - safety_margin
-        emergency_penalty = -0.5 if emergency_threshold > 0 else 0
-        reward_components["emergency_penalty"] = emergency_penalty
+        if shortfall > safety_margin:
+            shaped_reward -= 0.5
 
-        logger.debug(
-            f"Safety margin: {safety_margin:.2f}, Emergency threshold: {emergency_threshold:.2f}"
-        )
-        logger.debug(f"Emergency penalty: {emergency_penalty:.2f}")
-
-        # 4. Price-Aware Action Reward
-        day_prices = self.env.price_values[int(day) - 1]
-        price_percentile = np.percentile(day_prices, 75)
-
-        price_bonus = 0
-        if action > 0:  # Buying
-            price_bonus = 0.2 if price < price_percentile else -0.1
-            logger.debug(
-                f"Buying: Current price {price:.2f} vs 75th percentile {price_percentile:.2f}"
-            )
-        elif action < 0:  # Selling
-            price_bonus = 0.2 if price > price_percentile else -0.1
-            logger.debug(
-                f"Selling: Current price {price:.2f} vs 75th percentile {price_percentile:.2f}"
-            )
-        reward_components["price_bonus"] = price_bonus
-
-        logger.debug(f"Price bonus: {price_bonus:.2f}")
-
-        # 5. End-of-Day Completion Reward
-        completion_bonus = 0
-        if next_hour == 1 and hour == 24:  # Day transition
+        # End-of-day completion bonus
+        if next_hour == 1 and hour == 24:
             completion_ratio = min(storage / self.daily_energy_demand, 1.0)
-            completion_bonus = completion_ratio * 0.5
-            reward_components["completion_bonus"] = completion_bonus
-            logger.debug(
-                f"Day completed. Completion ratio: {completion_ratio:.2f}, Bonus: {completion_bonus:.2f}"
-            )
+            shaped_reward += completion_ratio * 0.5
 
-        # Combine all components
-        shaped_reward = (
-            reward * time_multiplier
-            + storage_penalty
-            + emergency_penalty
-            + price_bonus
-            + completion_bonus
-        )
-
-        # Log final reward composition
-        logger.debug("Reward composition:")
-        logger.debug(f"Base reward (normalized): {reward:.2f}")
-        logger.debug(f"Storage penalty: {storage_penalty:.2f}")
-        logger.debug(
-            f"Time multiplier effect: {(reward * time_multiplier - reward):.2f}"
-        )
-        logger.debug(f"Emergency penalty: {emergency_penalty:.2f}")
-        logger.debug(f"Price bonus: {price_bonus:.2f}")
-        logger.debug(f"Completion bonus: {completion_bonus:.2f}")
-        logger.debug(f"Final shaped reward: {shaped_reward:.2f}")
-
-        # Store reward components for potential analysis
-        self.last_reward_components = reward_components
-
-        return shaped_reward, original_reward
-
-    def _get_day_statistics(self, day):
-        """Helper method to calculate day-specific price statistics"""
-        day_prices = self.env.price_values[day - 1]
-        stats = {
-            "mean": np.mean(day_prices),
-            "median": np.median(day_prices),
-            "percentile_75": np.percentile(day_prices, 75),
-            "percentile_25": np.percentile(day_prices, 25),
-        }
-
-        logger.debug(f"Day {day} price statistics:")
-        for key, value in stats.items():
-            logger.debug(f"{key}: {value:.2f}")
-
-        return stats
-
-    def print_reward_components(self):
-        """Helper method to print the last reward components"""
-        if hasattr(self, "last_reward_components"):
-            logger.debug("\nLast reward components:")
-            for component, value in self.last_reward_components.items():
-                logger.debug(f"{component}: {value:.4f}")
-        else:
-            logger.debug("No reward components available yet")
+        return shaped_reward, reward
 
     def update(self, state, action, reward, next_state, done):
         # Apply reward shaping
         reward, original_reward = self.reward_shaping(state, action, reward, next_state)
-
-        # Convert action to index (0, 1, 2)
         action_idx = action + 1
 
+        # Store normalized states
+        normalized_state = self._normalize_state(state)
+        normalized_next_state = self._normalize_state(next_state)
+
         self.memory.add(
-            (
-                self._normalize_state(state),
-                action_idx,
-                reward,
-                self._normalize_state(next_state),
-                done,
-            )
+            (normalized_state, action_idx, reward, normalized_next_state, done)
         )
 
-        if len(self.memory) >= self.batch_size:
+        # Update network less frequently
+        if (
+            len(self.memory) >= self.batch_size
+            and self.steps % self.update_frequency == 0
+        ):
             self._update_network()
 
         self.steps += 1
@@ -330,22 +233,22 @@ class DeepQLearningAgent(BaseAgent):
         return reward, original_reward
 
     def _update_network(self):
-        states, actions, rewards, next_states, dones = self.memory.sample(
-            self.batch_size
-        )
-
-        states = torch.FloatTensor(np.array(states)).to(self.device)
-        actions = torch.LongTensor(actions).to(self.device)
-        rewards = torch.FloatTensor(rewards).to(self.device)
-        next_states = torch.FloatTensor(np.array(next_states)).to(self.device)
-        dones = torch.BoolTensor(dones).to(self.device)
-
-        # Current Q-values
-        current_q_values = self.policy_net(states).gather(1, actions.unsqueeze(1))
-
-        # Double Q-Learning target Q-values
+        # Batch processing with GPU optimization
         with torch.no_grad():
-            next_actions = self.policy_net(next_states).max(1)[1].unsqueeze(1)
+            states, actions, rewards, next_states, dones = self.memory.sample(
+                self.batch_size
+            )
+
+            # Convert to tensors and move to device
+            states = torch.FloatTensor(np.array(states)).to(self.device)
+            actions = torch.LongTensor(actions).to(self.device)
+            rewards = torch.FloatTensor(rewards).to(self.device)
+            next_states = torch.FloatTensor(np.array(next_states)).to(self.device)
+            dones = torch.BoolTensor(dones).to(self.device)
+
+            # Double Q-learning target calculation
+            next_q_values = self.policy_net(next_states)
+            next_actions = next_q_values.max(1)[1].unsqueeze(1)
             max_next_q_values = (
                 self.target_net(next_states).gather(1, next_actions).squeeze(1)
             )
@@ -353,17 +256,16 @@ class DeepQLearningAgent(BaseAgent):
                 ~dones
             )
 
-        # Loss calculation
+        # Current Q-values and loss calculation
+        current_q_values = self.policy_net(states).gather(1, actions.unsqueeze(1))
         loss = nn.MSELoss()(current_q_values.squeeze(), target_q_values)
 
+        # Optimization step
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
 
-        logger.debug(f"Updated network with loss: {loss.item()}")
-
     def train(self, env, episodes, validate_every=None, val_env=None):
-        logger.info("Starting training")
         training_rewards = []
         validation_rewards = []
         state_action_history = []
@@ -377,7 +279,6 @@ class DeepQLearningAgent(BaseAgent):
             while not terminated:
                 action = self.choose_action(state)
                 next_state, reward, terminated = env.step(action)
-
                 updated_reward, original_reward = self.update(
                     state, action, reward, next_state, terminated
                 )
@@ -394,11 +295,7 @@ class DeepQLearningAgent(BaseAgent):
 
             env.reset()
 
-            logger.info(
-                f"Episode {episode + 1}: Reward = {episode_reward:.2f}, Epsilon = {self.epsilon:.4f}"
-            )
-
-            # Update epsilon linearly
+            # Update epsilon with linear decay
             if episode < self.epsilon_decay_episodes:
                 self.epsilon = self.epsilon_start - (
                     episode / self.epsilon_decay_episodes
@@ -406,11 +303,15 @@ class DeepQLearningAgent(BaseAgent):
             else:
                 self.epsilon = self.epsilon_end
 
-        logger.info("Training completed")
+            # Log only every 10 episodes for performance
+            if (episode + 1) % 10 == 0:
+                logger.info(
+                    f"Episode {episode + 1}: Reward = {episode_reward:.2f}, Epsilon = {self.epsilon:.4f}"
+                )
+
         return training_rewards, validation_rewards, state_action_history
 
     def validate(self, env, num_episodes=10):
-        logger.info("Starting validation")
         total_reward = 0
         original_epsilon = self.epsilon
         self.epsilon = 0
@@ -423,8 +324,8 @@ class DeepQLearningAgent(BaseAgent):
             while not terminated:
                 action = self.choose_action(state)
                 next_state, reward, terminated = env.step(action)
-                updated_reward, original_reward = self.update(
-                    state, action, reward, next_state, terminated
+                updated_reward, _ = self.reward_shaping(
+                    state, action, reward, next_state
                 )
                 episode_reward += updated_reward
                 state = next_state
@@ -433,9 +334,7 @@ class DeepQLearningAgent(BaseAgent):
             env.reset()
 
         self.epsilon = original_epsilon
-        avg_reward = total_reward / num_episodes
-        logger.info(f"Validation: Average Reward = {avg_reward:.2f}")
-        return avg_reward
+        return total_reward / num_episodes
 
     def save(self, path):
         torch.save(
@@ -448,26 +347,24 @@ class DeepQLearningAgent(BaseAgent):
             },
             path,
         )
-        logger.info(f"Model saved to {path}")
 
     def load(self, path):
-        checkpoint = torch.load(path)
+        checkpoint = torch.load(path, map_location=self.device)
         self.policy_net.load_state_dict(checkpoint["policy_net_state_dict"])
         self.target_net.load_state_dict(checkpoint["target_net_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         self.epsilon = checkpoint["epsilon"]
         self.steps = checkpoint["steps"]
-        logger.info(f"Model loaded from {path}")
 
     def save_state_action_history(self, state_action_history, save_path):
-        # Convert NumPy arrays to lists
-        serializable_history = [
-            [
-                (state.tolist(), action, original_reward, updated_reward)
-                for state, action, original_reward, updated_reward in episode
-            ]
-            for episode in state_action_history
-        ]
+        serializable_history = []
+        for episode in state_action_history:
+            episode_data = []
+            for state, action, original_reward, updated_reward in episode:
+                episode_data.append(
+                    (state.tolist(), action, original_reward, updated_reward)
+                )
+            serializable_history.append(episode_data)
+
         with open(save_path, "w") as f:
             json.dump(serializable_history, f)
-        logger.info(f"State-action history saved to {save_path}")
