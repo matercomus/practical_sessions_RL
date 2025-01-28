@@ -295,6 +295,11 @@ class DeepQLearningAgent(BaseAgent):
         logger.info(f"Model loaded from {path}")
 
     def save_state_action_history(self, state_action_history, save_path):
+        # Convert NumPy arrays to lists
+        serializable_history = [
+            [(state.tolist(), action) for state, action in episode]
+            for episode in state_action_history
+        ]
         with open(save_path, "w") as f:
-            json.dump(state_action_history, f)
+            json.dump(serializable_history, f)
         logger.info(f"State-action history saved to {save_path}")
