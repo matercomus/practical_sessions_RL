@@ -6,7 +6,7 @@ from datetime import timedelta
 def plot_metrics(training_rewards, validation_rewards, output_dir):
     """Plot and save training/validation metrics"""
     # Plot training rewards
-    plt.figure()
+    plt.figure(figsize=(10, 6))
     plt.plot(
         range(1, len(training_rewards) + 1), training_rewards, label="Training Rewards"
     )
@@ -15,13 +15,14 @@ def plot_metrics(training_rewards, validation_rewards, output_dir):
     plt.title("Training Rewards")
     plt.legend()
     plt.grid()
+    plt.tight_layout()
     training_graph_path = os.path.join(output_dir, "training_rewards.png")
     plt.savefig(training_graph_path)
     print(f"Training graph saved at {training_graph_path}")
 
     # Plot validation rewards if available
     if validation_rewards:
-        plt.figure()
+        plt.figure(figsize=(10, 6))
         validation_episodes, val_rewards = zip(*validation_rewards)
         plt.plot(
             validation_episodes, val_rewards, label="Validation Rewards", marker="o"
@@ -31,6 +32,7 @@ def plot_metrics(training_rewards, validation_rewards, output_dir):
         plt.title("Validation Rewards")
         plt.legend()
         plt.grid()
+        plt.tight_layout()
         validation_graph_path = os.path.join(output_dir, "validation_rewards.png")
         plt.savefig(validation_graph_path)
         print(f"Validation graph saved at {validation_graph_path}")
@@ -61,7 +63,7 @@ def plot_agent_behavior(
             if not interval_history:
                 continue
 
-            states, actions = zip(*interval_history)
+            states, actions, original_rewards, reshaped_rewards = zip(*interval_history)
             storage, price, _ = zip(*[state[:3] for state in states])
 
             time_labels = [
@@ -72,9 +74,9 @@ def plot_agent_behavior(
             # Adjust the step size for x-axis labels to avoid clutter
             step_size = max(1, len(storage) // 10)
 
-            plt.figure(figsize=(12, 8))
+            plt.figure(figsize=(14, 10))
 
-            plt.subplot(3, 1, 1)
+            plt.subplot(4, 1, 1)
             plt.plot(range(len(storage)), storage, "bo-", label="Storage")
             plt.xticks(
                 range(0, len(storage), step_size),
@@ -90,7 +92,7 @@ def plot_agent_behavior(
             plt.legend()
             plt.ylim(min(storage) - 1, max(storage) + 1)
 
-            plt.subplot(3, 1, 2)
+            plt.subplot(4, 1, 2)
             plt.plot(range(len(price)), price, "ro-", label="Price")
             plt.xticks(
                 range(0, len(price), step_size),
@@ -106,7 +108,7 @@ def plot_agent_behavior(
             plt.legend()
             plt.ylim(min(price) - 1, max(price) + 1)
 
-            plt.subplot(3, 1, 3)
+            plt.subplot(4, 1, 3)
             plt.plot(range(len(actions)), actions, "go-", label="Action")
             plt.xticks(
                 range(0, len(actions), step_size),
@@ -121,6 +123,36 @@ def plot_agent_behavior(
             )
             plt.legend()
             plt.ylim(min(actions) - 1, max(actions) + 1)
+
+            plt.subplot(4, 1, 4)
+            plt.plot(
+                range(len(original_rewards)),
+                original_rewards,
+                "mo-",
+                label="Original Reward",
+            )
+            plt.plot(
+                range(len(reshaped_rewards)),
+                reshaped_rewards,
+                "co-",
+                label="Reshaped Reward",
+            )
+            plt.xticks(
+                range(0, len(original_rewards), step_size),
+                time_labels[::step_size],
+                rotation=45,
+                ha="right",
+            )
+            plt.xlabel("Time (days and hours)")
+            plt.ylabel("Reward")
+            plt.title(
+                f"Episode {episode_idx + 1}, Interval {interval_start // steps_per_interval + 1} - Rewards"
+            )
+            plt.legend()
+            plt.ylim(
+                min(min(original_rewards), min(reshaped_rewards)) - 1,
+                max(max(original_rewards), max(reshaped_rewards)) + 1,
+            )
 
             behavior_graph_path = os.path.join(
                 output_dir,

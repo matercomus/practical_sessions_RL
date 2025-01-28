@@ -154,25 +154,158 @@ class DeepQLearningAgent(BaseAgent):
         return action
 
     def reward_shaping(self, state, action, reward, next_state):
-        _, price, hour, _ = state
+        storage, price, hour, day = state
+        next_storage, next_price, next_hour, next_day = next_state
         original_reward = reward
-        reward_scale = 1000.0
+        reward_scale = 1000.0  # Base scaling factor
 
-        # Normalize the reward
+        # Initialize logging dictionary to track all components
+        reward_components = {
+            "original_reward": original_reward,
+            "normalized_reward": reward / reward_scale,
+            "storage_penalty": 0,
+            "time_multiplier": 1.0,
+            "emergency_penalty": 0,
+            "price_bonus": 0,
+            "completion_bonus": 0,
+        }
+
+        logger.debug(
+            f"\nProcessing reward shaping for state: Storage={storage:.2f}, Price={price:.2f}, Hour={hour}, Day={day}"
+        )
+        logger.debug(
+            f"Action taken: {action:.2f}, Original reward: {original_reward:.2f}"
+        )
+
+        # Normalize the base reward (financial return)
         reward = reward / reward_scale
 
-        # Encourage buying between hours
-        buy_hours = range(1, 9)
-        if hour in buy_hours and action == 1:
-            reward *= 0.25
+        # Calculate remaining hours in the day
+        hours_left = 24 - hour if hour < 24 else 0
+        logger.debug(f"Hours left in day: {hours_left}")
 
-        logger.debug(f"Reward normal: {original_reward}")
-        logger.debug(f"Reward reshaped: {reward}")
-        return reward
+        # Calculate current shortfall from daily requirement
+        shortfall = max(0, self.daily_energy_demand - storage)
+        logger.debug(f"Current shortfall: {shortfall:.2f} MWh")
+
+        # 1. Storage Level Management Component
+        storage_ratio = storage / self.daily_energy_demand
+        target_ratio = hour / 24.0  # Linear target ratio throughout the day
+        storage_deviation = abs(storage_ratio - target_ratio)
+        storage_penalty = -storage_deviation * 0.2
+        reward_components["storage_penalty"] = storage_penalty
+
+        logger.debug(
+            f"Storage ratio: {storage_ratio:.2f}, Target ratio: {target_ratio:.2f}"
+        )
+        logger.debug(
+            f"Storage deviation: {storage_deviation:.2f}, Penalty: {storage_penalty:.2f}"
+        )
+
+        # 2. Time-Aware Buying Incentive
+        buy_hours = set(range(1, 9))  # Hours 1-8
+        time_multiplier = 1.2 if hour in buy_hours else 1.0
+        reward_components["time_multiplier"] = time_multiplier
+
+        logger.debug(
+            f"Hour {hour} {'is' if hour in buy_hours else 'is not'} in buy hours"
+        )
+        logger.debug(f"Time multiplier: {time_multiplier:.2f}")
+
+        # 3. Emergency Prevention Reward
+        safety_margin = self.max_power_rate * hours_left
+        emergency_threshold = shortfall - safety_margin
+        emergency_penalty = -0.5 if emergency_threshold > 0 else 0
+        reward_components["emergency_penalty"] = emergency_penalty
+
+        logger.debug(
+            f"Safety margin: {safety_margin:.2f}, Emergency threshold: {emergency_threshold:.2f}"
+        )
+        logger.debug(f"Emergency penalty: {emergency_penalty:.2f}")
+
+        # 4. Price-Aware Action Reward
+        day_prices = self.env.price_values[int(day) - 1]
+        price_percentile = np.percentile(day_prices, 75)
+
+        price_bonus = 0
+        if action > 0:  # Buying
+            price_bonus = 0.2 if price < price_percentile else -0.1
+            logger.debug(
+                f"Buying: Current price {price:.2f} vs 75th percentile {price_percentile:.2f}"
+            )
+        elif action < 0:  # Selling
+            price_bonus = 0.2 if price > price_percentile else -0.1
+            logger.debug(
+                f"Selling: Current price {price:.2f} vs 75th percentile {price_percentile:.2f}"
+            )
+        reward_components["price_bonus"] = price_bonus
+
+        logger.debug(f"Price bonus: {price_bonus:.2f}")
+
+        # 5. End-of-Day Completion Reward
+        completion_bonus = 0
+        if next_hour == 1 and hour == 24:  # Day transition
+            completion_ratio = min(storage / self.daily_energy_demand, 1.0)
+            completion_bonus = completion_ratio * 0.5
+            reward_components["completion_bonus"] = completion_bonus
+            logger.debug(
+                f"Day completed. Completion ratio: {completion_ratio:.2f}, Bonus: {completion_bonus:.2f}"
+            )
+
+        # Combine all components
+        shaped_reward = (
+            reward * time_multiplier
+            + storage_penalty
+            + emergency_penalty
+            + price_bonus
+            + completion_bonus
+        )
+
+        # Log final reward composition
+        logger.debug("Reward composition:")
+        logger.debug(f"Base reward (normalized): {reward:.2f}")
+        logger.debug(f"Storage penalty: {storage_penalty:.2f}")
+        logger.debug(
+            f"Time multiplier effect: {(reward * time_multiplier - reward):.2f}"
+        )
+        logger.debug(f"Emergency penalty: {emergency_penalty:.2f}")
+        logger.debug(f"Price bonus: {price_bonus:.2f}")
+        logger.debug(f"Completion bonus: {completion_bonus:.2f}")
+        logger.debug(f"Final shaped reward: {shaped_reward:.2f}")
+
+        # Store reward components for potential analysis
+        self.last_reward_components = reward_components
+
+        return shaped_reward, original_reward
+
+    def _get_day_statistics(self, day):
+        """Helper method to calculate day-specific price statistics"""
+        day_prices = self.env.price_values[day - 1]
+        stats = {
+            "mean": np.mean(day_prices),
+            "median": np.median(day_prices),
+            "percentile_75": np.percentile(day_prices, 75),
+            "percentile_25": np.percentile(day_prices, 25),
+        }
+
+        logger.debug(f"Day {day} price statistics:")
+        for key, value in stats.items():
+            logger.debug(f"{key}: {value:.2f}")
+
+        return stats
+
+    def print_reward_components(self):
+        """Helper method to print the last reward components"""
+        if hasattr(self, "last_reward_components"):
+            logger.debug("\nLast reward components:")
+            for component, value in self.last_reward_components.items():
+                logger.debug(f"{component}: {value:.4f}")
+        else:
+            logger.debug("No reward components available yet")
 
     def update(self, state, action, reward, next_state, done):
         # Apply reward shaping
-        reward = self.reward_shaping(state, action, reward, next_state)
+        reward, original_reward = self.reward_shaping(state, action, reward, next_state)
 
         # Convert action to index (0, 1, 2)
         action_idx = action + 1
@@ -194,7 +327,7 @@ class DeepQLearningAgent(BaseAgent):
         if self.steps % self.target_update == 0:
             self.target_net.load_state_dict(self.policy_net.state_dict())
 
-        return reward
+        return reward, original_reward
 
     def _update_network(self):
         states, actions, rewards, next_states, dones = self.memory.sample(
@@ -245,10 +378,10 @@ class DeepQLearningAgent(BaseAgent):
                 action = self.choose_action(state)
                 next_state, reward, terminated = env.step(action)
 
-                updated_reward = self.update(
+                updated_reward, original_reward = self.update(
                     state, action, reward, next_state, terminated
                 )
-                episode_history.append((state, action))
+                episode_history.append((state, action, original_reward, updated_reward))
                 episode_reward += updated_reward
                 state = next_state
 
@@ -290,7 +423,7 @@ class DeepQLearningAgent(BaseAgent):
             while not terminated:
                 action = self.choose_action(state)
                 next_state, reward, terminated = env.step(action)
-                updated_reward = self.update(
+                updated_reward, original_reward = self.update(
                     state, action, reward, next_state, terminated
                 )
                 episode_reward += updated_reward
@@ -329,7 +462,10 @@ class DeepQLearningAgent(BaseAgent):
     def save_state_action_history(self, state_action_history, save_path):
         # Convert NumPy arrays to lists
         serializable_history = [
-            [(state.tolist(), action) for state, action in episode]
+            [
+                (state.tolist(), action, original_reward, updated_reward)
+                for state, action, original_reward, updated_reward in episode
+            ]
             for episode in state_action_history
         ]
         with open(save_path, "w") as f:
