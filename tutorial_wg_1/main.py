@@ -7,10 +7,11 @@ from datetime import datetime
 from plotting_utils import plot_metrics, plot_agent_behavior
 
 
-def create_output_directory():
+def create_output_directory(output_dir="."):
     """Create and return path to timestamped output directory"""
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    output_dir = f"run_{run_timestamp}"
+    dir_name = f"run_{run_timestamp}"
+    output_dir = os.path.join(output_dir, dir_name)
     os.makedirs(output_dir, exist_ok=True)
     return output_dir
 
@@ -26,10 +27,11 @@ def main():
     parser.add_argument("--load-model", type=str, default=None)
     parser.add_argument("--plot-interval-days", type=int, default=7)
     parser.add_argument("--save-state-action-history", action="store_true")
+    parser.add_argument("--output-dir", type=str, default=".")
     args = parser.parse_args()
 
     # Create output directory
-    output_dir = create_output_directory()
+    output_dir = create_output_directory(output_dir=args.output_dir)
 
     # Initialize environments
     train_env = DataCenterEnv(args.train_path)
