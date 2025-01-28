@@ -9,6 +9,12 @@ import json
 import logging
 from agent_base import BaseAgent
 
+# TODO:
+# Reward shaping
+# Same as heuristic (buy when price is low/ under threashold) or sell when price is high/ above threashold.
+# Aslo reward storage above 50.
+# reward buying between hours 1 and 6 ish.
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 #logging.basicConfig(level=logging.DEBUG)
@@ -19,9 +25,13 @@ class DQN(nn.Module):
     def __init__(self, input_dim, output_dim):
         super(DQN, self).__init__()
         self.network = nn.Sequential(
-            nn.Linear(input_dim, 64),
+            nn.Linear(input_dim, 128),
             nn.ReLU(),
-            nn.Linear(64, 128),
+            nn.Linear(128, 256),
+            nn.ReLU(),
+            nn.Linear(256, 256),
+            nn.ReLU(),
+            nn.Linear(256, 128),
             nn.ReLU(),
             nn.Linear(128, output_dim),
         )
@@ -149,8 +159,49 @@ class DeepQLearningAgent(BaseAgent):
 
         return action
 
+    def reward_shaping(self, state, action, reward, next_state):
+        _, price, hour, _ = state
+        original_reward = reward
+        reward_scale = 1000.0
+
+        # Normalize the reward
+        reward = reward / reward_scale
+
+        # Define thresholds
+        price_threshold_low = 0.3 * self.price_scale  # Example threshold for low price
+        price_threshold_high = (
+            0.7 * self.price_scale
+        )  # Example threshold for high price
+
+        # Encourage buying between hours 1 and 8
+        if action == 1 and 1 <= hour <= 8:
+            reward += 1.0
+
+        # Reward for selling when price is high
+        if action == -1 and price > price_threshold_high:
+            reward += 1.0
+
+        # Penalize for buying when price is high
+        if action == 1 and price > price_threshold_high:
+            reward -= 1.0
+
+        # Penalize for selling when price is low
+        if action == -1 and price < price_threshold_low:
+            reward -= 1.0
+
+        # Ensure rewards are generally negative for buying and positive for selling
+        if action == 1:
+            reward -= 0.5
+        elif action == -1:
+            reward += 0.5
+
+        logger.info(f"Reward normal: {original_reward}")
+        logger.info(f"Reward reshaped: {reward}")
+        return reward
+
     def update(self, state, action, reward, next_state, done):
-        reward = reward / 10.0  # Normalize reward
+        # Apply reward shaping
+        reward = self.reward_shaping(state, action, reward, next_state)
 
         # Convert action to index (0, 1, 2)
         action_idx = action + 1
@@ -171,6 +222,8 @@ class DeepQLearningAgent(BaseAgent):
         self.steps += 1
         if self.steps % self.target_update == 0:
             self.target_net.load_state_dict(self.policy_net.state_dict())
+
+        return reward
 
     def _update_network(self):
         states, actions, rewards, next_states, dones = self.memory.sample(
@@ -220,9 +273,11 @@ class DeepQLearningAgent(BaseAgent):
                 action = self.choose_action(state)
                 next_state, reward, terminated = env.step(action)
 
-                self.update(state, action, reward, next_state, terminated)
+                updated_reward = self.update(
+                    state, action, reward, next_state, terminated
+                )
                 episode_history.append((state, action))
-                episode_reward += reward
+                episode_reward += updated_reward
                 state = next_state
 
             training_rewards.append(episode_reward)
@@ -261,7 +316,10 @@ class DeepQLearningAgent(BaseAgent):
             while not terminated:
                 action = self.choose_action(state)
                 next_state, reward, terminated = env.step(action)
-                episode_reward += reward
+                updated_reward = self.update(
+                    state, action, reward, next_state, terminated
+                )
+                episode_reward += updated_reward
                 state = next_state
 
             total_reward += episode_reward
