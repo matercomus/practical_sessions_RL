@@ -244,15 +244,19 @@ class DeepQLearningAgent:
 
     def reward_shaping(self, state, action, reward, next_state):
         """
-        Simple shaping: If hour=23 -> next_hour=0, bonus if storage >= daily_energy_demand.
+        Simple shaping: As in heuristic. sell/buy if price is over sell/buy threshold.
+        If price is higer then sell_threshold then reward it same for buy.
         """
-        shaped_reward = reward
+        shaped_reward = reward / 100.0
         storage, price, hour, day = state
         next_hour = int(next_state[2])
+        buy_threshold = 70
+        sell_threshold = 150
 
-        if hour == 23 and next_hour == 0:
-            if storage >= self.daily_energy_demand:
-                shaped_reward += 1.0
+        if price < buy_threshold and action == 1:
+            shaped_reward += 1.0
+        if price > sell_threshold and action == -1:
+            shaped_reward += 1.0
 
         return shaped_reward, reward
 

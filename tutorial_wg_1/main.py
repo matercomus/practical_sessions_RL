@@ -6,10 +6,12 @@ from datetime import datetime
 from plotting_utils import plot_metrics, plot_agent_behavior
 
 
-def create_output_directory(output_dir="."):
+def create_output_directory(output_dir=".", run_name=None):
     """Create and return path to timestamped output directory"""
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     dir_name = f"run_{run_timestamp}"
+    if run_name:
+        dir_name += f"_{run_name}"
     output_dir = os.path.join(output_dir, dir_name)
     os.makedirs(output_dir, exist_ok=True)
     return output_dir
@@ -27,10 +29,13 @@ def main():
     parser.add_argument("--plot-interval-days", type=int, default=7)
     parser.add_argument("--save-state-action-history", action="store_true")
     parser.add_argument("--output-dir", type=str, default=".")
+    parser.add_argument("--run-name", type=str, default=None)
     args = parser.parse_args()
 
     # Create output directory
-    output_dir = create_output_directory(output_dir=args.output_dir)
+    output_dir = create_output_directory(
+        output_dir=args.output_dir, run_name=args.run_name
+    )
 
     # Initialize environments
     train_env = DataCenterEnv(args.train_path)
@@ -42,7 +47,7 @@ def main():
         train_env, model_path=args.load_model, total_episodes=args.episodes
     )
 
-    # Print and save q table stats if agent has this mehtod
+    # Print and save q table stats if agent has this method
     if hasattr(agent, "print_and_save_q_table_stats"):
         agent.print_and_save_q_table_stats(output_dir)
 
