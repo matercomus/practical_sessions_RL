@@ -1,6 +1,5 @@
 import os
 import json
-import time
 import logging
 import numpy as np
 import torch
@@ -170,8 +169,7 @@ class DeepQLearningAgent:
             "tau": tau,
             "invalid_action_penalty": invalid_action_penalty,
         }
-        ts = time.strftime("%Y%m%d-%H%M%S")
-        self.hparams_json_path = os.path.join(self.output_dir, f"hparams_{ts}.json")
+        self.hparams_json_path = os.path.join(self.output_dir, "hparams.json")
         self.save_hyperparams()
 
         # Load model if path provided
@@ -590,7 +588,7 @@ class DeepQLearningAgent:
             self.hparams = checkpoint["hparams"]
         logger.info(f"Model loaded from {path}")
 
-    def save_state_action_history(self, history, save_path):
+    def save_state_action_history(self, history):
         """
         Save the state-action history to a JSON file.
 
@@ -615,6 +613,7 @@ class DeepQLearningAgent:
                 )
             serializable.append(ep_data)
 
+        save_path = os.path.join(self.output_dir, "state_action_history.json")
         with open(save_path, "w") as f:
             json.dump(serializable, f, indent=2)
         logger.info(f"State-action history saved to {save_path}")

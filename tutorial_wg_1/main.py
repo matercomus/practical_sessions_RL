@@ -42,9 +42,11 @@ def main():
     val_env = DataCenterEnv(args.val_path) if args.validate_every else None
 
     # Initialize agent
-    # agent = DeepQLearningAgent(train_env, model_path=args.load_model)
     agent = DeepQLearningAgent(
-        train_env, model_path=args.load_model, total_episodes=args.episodes
+        train_env,
+        model_path=args.load_model,
+        total_episodes=args.episodes,
+        output_dir=output_dir,
     )
 
     # Print and save q table stats if agent has this method
@@ -68,7 +70,7 @@ def main():
     if args.save_state_action_history:
         filename = "state_action_history.json"
         save_path = os.path.join(output_dir, filename)
-        agent.save_state_action_history(state_action_history, save_path)
+        agent.save_state_action_history(state_action_history)
         print(f"State-action history saved at {save_path}")
 
     # Plot metrics if requested
