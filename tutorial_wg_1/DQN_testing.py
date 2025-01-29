@@ -487,6 +487,22 @@ class DeepQLearningAgent:
             env.reset()
 
         logger.info("Training complete.")
+
+        # Save final rewards
+        final_train_reward = train_rewards[-1] if train_rewards else None
+        final_val_reward = val_scores[-1][1] if val_scores else None
+
+        rewards_data = {
+            "final_train_reward": final_train_reward,
+            "final_val_reward": final_val_reward,
+        }
+        rewards_file_path = os.path.join(self.output_dir, "final_rewards.json")
+        with open(rewards_file_path, "w") as f:
+            json.dump(rewards_data, f, indent=2)
+        logger.info(
+            f"Final training and validation rewards saved to {rewards_file_path}"
+        )
+
         return train_rewards, val_scores, state_action_history, forced_action_stats
 
     def validate(self, env, num_episodes=5):
