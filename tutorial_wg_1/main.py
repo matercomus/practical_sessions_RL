@@ -54,7 +54,7 @@ def main():
         agent.print_and_save_q_table_stats(output_dir)
 
     # Train agent
-    training_rewards, validation_rewards, state_action_history = agent.train(
+    training_rewards, validation_rewards, state_action_history, forced_action_stats = agent.train(
         train_env,
         episodes=args.episodes,
         validate_every=args.validate_every,

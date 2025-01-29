@@ -37,6 +37,7 @@ def plot_metrics(training_rewards, validation_rewards, output_dir):
         plt.savefig(validation_graph_path)
         print(f"Validation graph saved at {validation_graph_path}")
 
+
 def plot_agent_behavior(
     state_action_history,
     output_dir,
@@ -62,7 +63,15 @@ def plot_agent_behavior(
             if not interval_history:
                 continue
 
-            states, actions, original_rewards, reshaped_rewards = zip(*interval_history)
+            (
+                states,
+                chosen_actions,
+                executed_action,
+                original_rewards,
+                reshaped_rewards,
+                was_forced,
+                reason,
+            ) = zip(*interval_history)
             storage, price, _ = zip(*[state[:3] for state in states])
 
             time_labels = [
@@ -72,13 +81,13 @@ def plot_agent_behavior(
 
             # Create action color mapping
             action_colors = []
-            for action in actions:
+            for action in chosen_actions:
                 if action == 1:
-                    action_colors.append('green')  # Buy
+                    action_colors.append("green")  # Buy
                 elif action == -1:
-                    action_colors.append('red')    # Sell
+                    action_colors.append("red")  # Sell
                 else:
-                    action_colors.append('yellow') # Hold
+                    action_colors.append("yellow")  # Hold
 
             step_size = max(1, len(storage) // 10)
 
@@ -102,16 +111,18 @@ def plot_agent_behavior(
 
             # Price plot with action markers
             plt.subplot(4, 1, 2)
-            plt.plot(range(len(price)), price, "k-", label="Price")  # Black line for price
+            plt.plot(
+                range(len(price)), price, "k-", label="Price"
+            )  # Black line for price
             # Scatter plot with action colors
             plt.scatter(
-                range(len(price)), 
-                price, 
+                range(len(price)),
+                price,
                 c=action_colors,
                 s=40,  # Marker size
-                edgecolors='black',
+                edgecolors="black",
                 linewidths=0.5,
-                zorder=2  # Ensure markers are on top
+                zorder=2,  # Ensure markers are on top
             )
             plt.xticks(
                 range(0, len(price), step_size),
@@ -120,16 +131,47 @@ def plot_agent_behavior(
                 ha="right",
             )
             plt.ylabel("Price (Actions)")
-            plt.legend(handles=[
-                plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='green', markersize=10, label='Buy'),
-                plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='red', markersize=10, label='Sell'),
-                plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='yellow', markersize=10, label='Hold')
-            ])
+            plt.legend(
+                handles=[
+                    plt.Line2D(
+                        [0],
+                        [0],
+                        marker="o",
+                        color="w",
+                        markerfacecolor="green",
+                        markersize=10,
+                        label="Buy",
+                    ),
+                    plt.Line2D(
+                        [0],
+                        [0],
+                        marker="o",
+                        color="w",
+                        markerfacecolor="red",
+                        markersize=10,
+                        label="Sell",
+                    ),
+                    plt.Line2D(
+                        [0],
+                        [0],
+                        marker="o",
+                        color="w",
+                        markerfacecolor="yellow",
+                        markersize=10,
+                        label="Hold",
+                    ),
+                ]
+            )
             plt.ylim(min(price) - 5, max(price) + 5)
 
             # Original Reward plot
             plt.subplot(4, 1, 3)
-            plt.plot(range(len(original_rewards)), original_rewards, "mo-", label="Original Reward")
+            plt.plot(
+                range(len(original_rewards)),
+                original_rewards,
+                "mo-",
+                label="Original Reward",
+            )
             plt.xticks(
                 range(0, len(original_rewards), step_size),
                 time_labels[::step_size],
@@ -142,7 +184,12 @@ def plot_agent_behavior(
 
             # Reshaped Reward plot
             plt.subplot(4, 1, 4)
-            plt.plot(range(len(reshaped_rewards)), reshaped_rewards, "co-", label="Reshaped Reward")
+            plt.plot(
+                range(len(reshaped_rewards)),
+                reshaped_rewards,
+                "co-",
+                label="Reshaped Reward",
+            )
             plt.xticks(
                 range(0, len(reshaped_rewards), step_size),
                 time_labels[::step_size],
