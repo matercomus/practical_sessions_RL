@@ -1,0 +1,11 @@
+{
+  "discount_rate": 0.9,
+  "learning_rate": 0.0006710468773372056,
+  "epsilon_start": 1.0,
+  "epsilon_end": 0.01,
+  "epsilon_decay_episodes": 0,
+  "batch_size": 32,
+  "memory_size": 20000,
+  "update_frequency": 4,
+  "tau": 0.04980657167524154
+}

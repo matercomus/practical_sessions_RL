@@ -37,7 +37,6 @@ def plot_metrics(training_rewards, validation_rewards, output_dir):
         plt.savefig(validation_graph_path)
         print(f"Validation graph saved at {validation_graph_path}")
 
-
 def plot_agent_behavior(
     state_action_history,
     output_dir,
@@ -71,11 +70,21 @@ def plot_agent_behavior(
                 for i in range(len(storage))
             ]
 
-            # Adjust the step size for x-axis labels to avoid clutter
+            # Create action color mapping
+            action_colors = []
+            for action in actions:
+                if action == 1:
+                    action_colors.append('green')  # Buy
+                elif action == -1:
+                    action_colors.append('red')    # Sell
+                else:
+                    action_colors.append('yellow') # Hold
+
             step_size = max(1, len(storage) // 10)
 
-            plt.figure(figsize=(14, 10))
+            plt.figure(figsize=(14, 12))  # Increased figure height
 
+            # Storage plot
             plt.subplot(4, 1, 1)
             plt.plot(range(len(storage)), storage, "bo-", label="Storage")
             plt.xticks(
@@ -84,76 +93,68 @@ def plot_agent_behavior(
                 rotation=45,
                 ha="right",
             )
-            plt.xlabel("Time (days and hours)")
             plt.ylabel("Storage")
             plt.title(
-                f"Episode {episode_idx + 1}, Interval {interval_start // steps_per_interval + 1} - Storage"
+                f"Episode {episode_idx + 1}, Interval {interval_start // steps_per_interval + 1}"
             )
             plt.legend()
             plt.ylim(min(storage) - 1, max(storage) + 1)
 
+            # Price plot with action markers
             plt.subplot(4, 1, 2)
-            plt.plot(range(len(price)), price, "ro-", label="Price")
+            plt.plot(range(len(price)), price, "k-", label="Price")  # Black line for price
+            # Scatter plot with action colors
+            plt.scatter(
+                range(len(price)), 
+                price, 
+                c=action_colors,
+                s=40,  # Marker size
+                edgecolors='black',
+                linewidths=0.5,
+                zorder=2  # Ensure markers are on top
+            )
             plt.xticks(
                 range(0, len(price), step_size),
                 time_labels[::step_size],
                 rotation=45,
                 ha="right",
             )
-            plt.xlabel("Time (days and hours)")
-            plt.ylabel("Price")
-            plt.title(
-                f"Episode {episode_idx + 1}, Interval {interval_start // steps_per_interval + 1} - Price"
-            )
-            plt.legend()
-            plt.ylim(min(price) - 1, max(price) + 1)
+            plt.ylabel("Price (Actions)")
+            plt.legend(handles=[
+                plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='green', markersize=10, label='Buy'),
+                plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='red', markersize=10, label='Sell'),
+                plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='yellow', markersize=10, label='Hold')
+            ])
+            plt.ylim(min(price) - 5, max(price) + 5)
 
+            # Original Reward plot
             plt.subplot(4, 1, 3)
-            plt.plot(range(len(actions)), actions, "go-", label="Action")
-            plt.xticks(
-                range(0, len(actions), step_size),
-                time_labels[::step_size],
-                rotation=45,
-                ha="right",
-            )
-            plt.xlabel("Time (days and hours)")
-            plt.ylabel("Action")
-            plt.title(
-                f"Episode {episode_idx + 1}, Interval {interval_start // steps_per_interval + 1} - Action"
-            )
-            plt.legend()
-            plt.ylim(min(actions) - 1, max(actions) + 1)
-
-            plt.subplot(4, 1, 4)
-            plt.plot(
-                range(len(original_rewards)),
-                original_rewards,
-                "mo-",
-                label="Original Reward",
-            )
-            plt.plot(
-                range(len(reshaped_rewards)),
-                reshaped_rewards,
-                "co-",
-                label="Reshaped Reward",
-            )
+            plt.plot(range(len(original_rewards)), original_rewards, "mo-", label="Original Reward")
             plt.xticks(
                 range(0, len(original_rewards), step_size),
                 time_labels[::step_size],
                 rotation=45,
                 ha="right",
             )
-            plt.xlabel("Time (days and hours)")
-            plt.ylabel("Reward")
-            plt.title(
-                f"Episode {episode_idx + 1}, Interval {interval_start // steps_per_interval + 1} - Rewards"
-            )
+            plt.ylabel("Original Reward")
             plt.legend()
-            plt.ylim(
-                min(min(original_rewards), min(reshaped_rewards)) - 1,
-                max(max(original_rewards), max(reshaped_rewards)) + 1,
-            )
+            plt.ylim(min(original_rewards) - 1, max(original_rewards) + 1)
 
+            # Reshaped Reward plot
+            plt.subplot(4, 1, 4)
+            plt.plot(range(len(reshaped_rewards)), reshaped_rewards, "co-", label="Reshaped Reward")
+            plt.xticks(
+                range(0, len(reshaped_rewards), step_size),
+                time_labels[::step_size],
+                rotation=45,
+                ha="right",
+            )
+            plt.xlabel("Time (days and hours)")
+            plt.ylabel("Reshaped Reward")
+            plt.legend()
+            plt.ylim(min(reshaped_rewards) - 1, max(reshaped_rewards) + 1)
+
+            # Save the figure
             behavior_graph_path = os.path.join(
                 output_dir,
                 f"episode_{episode_idx + 1}_interval_{interval_start // steps_per_interval + 1}_behavior.png",
