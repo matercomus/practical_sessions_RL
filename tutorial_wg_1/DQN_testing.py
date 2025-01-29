@@ -57,19 +57,21 @@ class ExperienceReplayBuffer:
 
 
 class DeepQLearningAgent:
+    # Best hyperparams found
+    # {'discount_rate': 0.9, 'learning_rate': 0.0006710468773372056, 'tau': 0.04980657167524154, 'batch_size': 32}
     def __init__(
         self,
         env,
         total_episodes,
-        discount_rate=0.99,
-        learning_rate=0.0001,
+        discount_rate=0.9,
+        learning_rate=0.0006710468773372056,
         epsilon_start=1.0,
         epsilon_end=0.01,
         epsilon_decay_episodes=None,
-        batch_size=128,
+        batch_size=32,
         memory_size=20000,
         update_frequency=4,
-        tau=0.01,  # Polyak update rate
+        tau=0.04980657167524154,  # Polyak update rate
         model_path=None,
         output_dir=".",
     ):
