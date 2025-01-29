@@ -1,7 +1,6 @@
 import os
 import json
 import time
-import random
 import logging
 import numpy as np
 import torch
@@ -182,22 +181,66 @@ class DeepQLearningAgent:
             dtype=np.float32,
         )
 
+    # def choose_action(self, state):
+    #     """
+    #     Epsilon-greedy policy. Output in {-1, 0, +1}.
+    #     """
+    #     if random.random() < self.epsilon:
+    #         return random.randint(-1, 1)
+    #     with torch.no_grad():
+    #         s = (
+    #             torch.FloatTensor(self._normalize_state(state))
+    #             .unsqueeze(0)
+    #             .to(self.device)
+    #         )
+    #         q_values = self.policy_net(s)
+    #         a_idx = q_values.argmax(dim=1).item()
+    #         # map 0->-1, 1->0, 2->1
+    #         return a_idx - 1
+
     def choose_action(self, state):
-        """
-        Epsilon-greedy policy. Output in {-1, 0, +1}.
-        """
-        if random.random() < self.epsilon:
-            return random.randint(-1, 1)
-        with torch.no_grad():
-            s = (
-                torch.FloatTensor(self._normalize_state(state))
-                .unsqueeze(0)
-                .to(self.device)
-            )
-            q_values = self.policy_net(s)
-            a_idx = q_values.argmax(dim=1).item()
-            # map 0->-1, 1->0, 2->1
-            return a_idx - 1
+        epsilon = self.epsilon
+        storage = state[0]
+        hour = int(state[2])
+        hours_left = 24 - hour
+        shortfall = self.daily_energy_demand - storage
+        max_possible_buy = hours_left * self.max_power_rate
+
+        # Force buy condition
+        if shortfall > max_possible_buy:
+            action = 1  # Maps to action index 2 (buy)
+            logger.debug("Force buy required. Choosing action 1.")
+        else:
+            # Epsilon-greedy action selection
+            if np.random.rand() < epsilon:
+                action_idx = np.random.randint(0, 3)
+                action = action_idx - 1
+                logger.debug(f"Choosing random action: {action}")
+            else:
+                state_tensor = (
+                    torch.tensor(state, dtype=torch.float32)
+                    .unsqueeze(0)
+                    .to(self.device)
+                )
+                with torch.no_grad():
+                    q_values = self.policy_net(state_tensor)
+                    action_idx = q_values.argmax().item()
+                action = action_idx - 1
+                logger.debug(f"Choosing action from policy: {action}")
+
+            # Check if selling is disallowed
+            if action == -1:
+                sell_amount = self.max_power_rate
+                potential_storage = storage - sell_amount
+                potential_shortfall = self.daily_energy_demand - potential_storage
+                hours_left_after = hours_left - 1
+                max_buy_after = hours_left_after * self.max_power_rate
+
+                if potential_shortfall > max_buy_after:
+                    action = 0  # Disallow sell, set to do nothing
+                    logger.debug("Disallowed sell. Setting action to 0.")
+
+        return action
 
     def reward_shaping(self, state, action, reward, next_state):
         """
