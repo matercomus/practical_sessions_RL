@@ -52,6 +52,7 @@ def optimize_hyperparameters(
             tau=tau,
             batch_size=batch_size,
             output_dir=trial_dir,  # So logs/model are saved per-trial
+            total_episodes=train_episodes,
         )
 
         # Train agent

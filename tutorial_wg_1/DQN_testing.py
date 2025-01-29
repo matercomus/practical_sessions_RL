@@ -56,16 +56,16 @@ class ExperienceReplayBuffer:
         return self.size
 
 
-# If you have a BaseAgent, you can subclass it. Otherwise, just define the agent normally.
 class DeepQLearningAgent:
     def __init__(
         self,
         env,
+        total_episodes,
         discount_rate=0.99,
         learning_rate=0.0001,
         epsilon_start=1.0,
         epsilon_end=0.01,
-        epsilon_decay_episodes=300,
+        epsilon_decay_episodes=None,
         batch_size=128,
         memory_size=20000,
         update_frequency=4,
@@ -75,6 +75,7 @@ class DeepQLearningAgent:
     ):
         """
         :param env: Training environment
+        :param total_episodes: Total number of training episodes
         :param discount_rate: Gamma
         :param learning_rate: LR for Adam
         :param epsilon_start: Initial epsilon
@@ -88,11 +89,14 @@ class DeepQLearningAgent:
         :param output_dir: Directory to save logs, hyperparams
         """
         self.env = env
+        self.total_episodes = total_episodes
         self.discount_rate = discount_rate
         self.learning_rate = learning_rate
         self.epsilon_start = epsilon_start
         self.epsilon_end = epsilon_end
-        self.epsilon_decay_episodes = epsilon_decay_episodes
+        self.epsilon_decay_episodes = epsilon_decay_episodes or int(
+            total_episodes * 0.8
+        )
         self.epsilon = epsilon_start
         self.batch_size = batch_size
         self.memory_size = memory_size
@@ -140,7 +144,7 @@ class DeepQLearningAgent:
             "learning_rate": learning_rate,
             "epsilon_start": epsilon_start,
             "epsilon_end": epsilon_end,
-            "epsilon_decay_episodes": epsilon_decay_episodes,
+            "epsilon_decay_episodes": self.epsilon_decay_episodes,
             "batch_size": batch_size,
             "memory_size": memory_size,
             "update_frequency": update_frequency,

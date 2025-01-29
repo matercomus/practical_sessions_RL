@@ -38,7 +38,9 @@ def main():
 
     # Initialize agent
     # agent = DeepQLearningAgent(train_env, model_path=args.load_model)
-    agent = DeepQLearningAgent(train_env, model_path=args.load_model)
+    agent = DeepQLearningAgent(
+        train_env, model_path=args.load_model, total_episodes=args.episodes
+    )
 
     # Print and save q table stats if agent has this mehtod
     if hasattr(agent, "print_and_save_q_table_stats"):
