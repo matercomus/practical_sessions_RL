@@ -1,23 +1,21 @@
+import os
+import json
+import time
+import random
+import logging
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import random
-import os
-import json
-import logging
 
-from agent_base import BaseAgent
 
-# Configure logging - INFO level should be enough for typical training monitoring
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 class DQN(nn.Module):
     def __init__(self, input_dim, output_dim):
-        super(DQN, self).__init__()
-        # Simple feedforward network with Xavier initialization
+        super().__init__()
         self.network = nn.Sequential(
             nn.Linear(input_dim, 128),
             nn.ReLU(),
@@ -27,8 +25,7 @@ class DQN(nn.Module):
             nn.ReLU(),
             nn.Linear(128, output_dim),
         )
-
-        # Initialize weights using Xavier initialization
+        # Xavier initialization
         for layer in self.network:
             if isinstance(layer, nn.Linear):
                 nn.init.xavier_uniform_(layer.weight)
@@ -40,7 +37,7 @@ class DQN(nn.Module):
 
 class ExperienceReplayBuffer:
     def __init__(self, capacity):
-        self.buffer = np.zeros(capacity, dtype=object)  # Pre-allocate buffer
+        self.buffer = np.zeros(capacity, dtype=object)
         self.capacity = capacity
         self.position = 0
         self.size = 0
@@ -59,292 +56,293 @@ class ExperienceReplayBuffer:
         return self.size
 
 
-class DeepQLearningAgent(BaseAgent):
+# If you have a BaseAgent, you can subclass it. Otherwise, just define the agent normally.
+class DeepQLearningAgent:
     def __init__(
         self,
         env,
-        discount_rate=0.99,  # Higher discount factor for longer-term
-        learning_rate=0.0001,  # Lower LR for stability
+        discount_rate=0.99,
+        learning_rate=0.0001,
         epsilon_start=1.0,
         epsilon_end=0.01,
-        epsilon_decay_episodes=300,  # Slow epsilon decay over episodes
+        epsilon_decay_episodes=300,
         batch_size=128,
         memory_size=20000,
         update_frequency=4,
-        tau=0.01,  # Polyak update rate for target net
+        tau=0.01,  # Polyak update rate
         model_path=None,
+        output_dir=".",
     ):
-        super().__init__()
+        """
+        :param env: Training environment
+        :param discount_rate: Gamma
+        :param learning_rate: LR for Adam
+        :param epsilon_start: Initial epsilon
+        :param epsilon_end: Final epsilon
+        :param epsilon_decay_episodes: # episodes to linearly decay epsilon
+        :param batch_size: Training batch size
+        :param memory_size: Replay buffer capacity
+        :param update_frequency: Steps between training updates
+        :param tau: Polyak update coefficient
+        :param model_path: Path to load a model checkpoint
+        :param output_dir: Directory to save logs, hyperparams
+        """
         self.env = env
         self.discount_rate = discount_rate
+        self.learning_rate = learning_rate
         self.epsilon_start = epsilon_start
         self.epsilon_end = epsilon_end
         self.epsilon_decay_episodes = epsilon_decay_episodes
         self.epsilon = epsilon_start
         self.batch_size = batch_size
+        self.memory_size = memory_size
         self.update_frequency = update_frequency
         self.tau = tau
+        self.steps = 0
 
-        # Scale parameters (adjust to match your environment)
+        os.makedirs(output_dir, exist_ok=True)
+        self.output_dir = output_dir
+
+        # Environment scaling parameters (adapt to your environment)
         self.daily_energy_demand = 120.0
         self.max_power_rate = 10.0
         self.storage_scale = 170.0
-        self.price_scale = np.percentile(self.env.price_values.flatten(), 99)
+        # We'll take a percentile from env for price scaling if env has price_values
+        if hasattr(self.env, "price_values"):
+            self.price_scale = np.percentile(self.env.price_values.flatten(), 99)
+        else:
+            self.price_scale = 100.0  # Fallback
 
-        # Setup networks
+        # Setup device
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        logger.info(f"Using device: {self.device}")
+
+        # DQN networks
         self.policy_net = DQN(4, 3).to(self.device)
         self.target_net = DQN(4, 3).to(self.device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
-        self.target_net.eval()  # We never train target_net directly
+        self.target_net.eval()
 
         # Optimizer
         self.optimizer = optim.Adam(
-            self.policy_net.parameters(), lr=learning_rate, betas=(0.9, 0.999), eps=1e-8
+            self.policy_net.parameters(),
+            lr=self.learning_rate,
+            betas=(0.9, 0.999),
+            eps=1e-8,
         )
 
         # Replay Buffer
-        self.memory = ExperienceReplayBuffer(memory_size)
+        self.memory = ExperienceReplayBuffer(self.memory_size)
 
-        # Bookkeeping
-        self.steps = 0
+        # Save hyperparams JSON immediately
+        self.hparams = {
+            "discount_rate": discount_rate,
+            "learning_rate": learning_rate,
+            "epsilon_start": epsilon_start,
+            "epsilon_end": epsilon_end,
+            "epsilon_decay_episodes": epsilon_decay_episodes,
+            "batch_size": batch_size,
+            "memory_size": memory_size,
+            "update_frequency": update_frequency,
+            "tau": tau,
+        }
+        ts = time.strftime("%Y%m%d-%H%M%S")
+        self.hparams_json_path = os.path.join(self.output_dir, f"hparams_{ts}.json")
+        self.save_hyperparams()
 
-        # Optionally load a previously saved model
+        # Optional: load existing model
         if model_path and os.path.exists(model_path):
             self.load(model_path)
 
-        logger.info(f"DeepQLearningAgent initialized on device: {self.device}")
+        logger.info("DeepQLearningAgent initialized.")
+
+    def save_hyperparams(self):
+        with open(self.hparams_json_path, "w") as f:
+            json.dump(self.hparams, f, indent=2)
+        logger.info(f"Hyperparameters saved to {self.hparams_json_path}")
 
     def _normalize_state(self, state):
         """
-        Vectorized state normalization.
-        State is assumed: (storage, price, hour, day).
+        Expects state in form (storage, price, hour, day).
+        Adjust as needed for your environment.
         """
         return np.array(
             [
-                state[0] / self.storage_scale,  # normalize storage
-                state[1] / self.price_scale,  # normalize price
-                state[2] / 24.0,  # hour in [0..24)
-                state[3] / 7.0,  # day in [0..7) or adapt to your env
+                state[0] / self.storage_scale,
+                state[1] / self.price_scale,
+                state[2] / 24.0,
+                state[3] / 7.0,
             ],
             dtype=np.float32,
         )
 
     def choose_action(self, state):
         """
-        Epsilon-greedy action selection (actions: -1, 0, +1).
+        Epsilon-greedy policy. Output in {-1, 0, +1}.
         """
         if random.random() < self.epsilon:
-            # Random integer in [-1, 1]
             return random.randint(-1, 1)
-
-        # Greedy action
         with torch.no_grad():
-            state_tensor = (
+            s = (
                 torch.FloatTensor(self._normalize_state(state))
                 .unsqueeze(0)
                 .to(self.device)
             )
-            q_values = self.policy_net(state_tensor)  # shape [1, 3]
-            action_idx = q_values.argmax(dim=1).item()  # 0,1,2
-            action = action_idx - 1  # -1..1
-        return action
+            q_values = self.policy_net(s)
+            a_idx = q_values.argmax(dim=1).item()
+            # map 0->-1, 1->0, 2->1
+            return a_idx - 1
 
     def reward_shaping(self, state, action, reward, next_state):
         """
-        Minimal shaping: mostly rely on environment reward,
-        optionally add small bonus at day boundary if storage meets demand.
+        Simple shaping: If hour=23 -> next_hour=0, bonus if storage >= daily_energy_demand.
         """
         shaped_reward = reward
         storage, price, hour, day = state
         next_hour = int(next_state[2])
 
-        # If environment transitions from hour=23->hour=0 as new day
         if hour == 23 and next_hour == 0:
             if storage >= self.daily_energy_demand:
-                # small bonus for meeting or exceeding daily demand
                 shaped_reward += 1.0
 
         return shaped_reward, reward
 
     def update(self, state, action, reward, next_state, done):
         """
-        Add transition to replay, do partial training step if needed.
+        Store transition, train periodically.
         """
-        shaped_reward, original_reward = self.reward_shaping(
-            state, action, reward, next_state
-        )
-        action_idx = action + 1  # -1..1 => 0..2
+        shaped_r, original_r = self.reward_shaping(state, action, reward, next_state)
+        a_idx = action + 1  # map -1..1 -> 0..2
 
-        # Store transitions (normalized states)
         self.memory.add(
             (
                 self._normalize_state(state),
-                action_idx,
-                shaped_reward,
+                a_idx,
+                shaped_r,
                 self._normalize_state(next_state),
                 done,
             )
         )
 
-        # Train if enough samples and at certain frequencies
         if len(self.memory) >= self.batch_size and (
             self.steps % self.update_frequency == 0
         ):
             self._update_network()
 
         self.steps += 1
-        return shaped_reward, original_reward
+        return shaped_r, original_r
 
     def _update_network(self):
         """
-        One gradient update step using Double DQN + Huber loss
-        and then Polyak (soft) update the target network.
+        Double DQN with Huber loss + Polyak (soft) target update.
         """
-        # Sample from replay
         states, actions, rewards, next_states, dones = self.memory.sample(
             self.batch_size
         )
 
-        # Convert to tensors
         states = torch.FloatTensor(np.array(states)).to(self.device)
         actions = torch.LongTensor(actions).to(self.device)
         rewards = torch.FloatTensor(rewards).to(self.device)
         next_states = torch.FloatTensor(np.array(next_states)).to(self.device)
         dones = torch.BoolTensor(dones).to(self.device)
 
-        # Double DQN: choose best action via policy_net, evaluate via target_net
         with torch.no_grad():
-            next_q_values = self.policy_net(next_states)  # shape [B, 3]
-            next_actions = next_q_values.argmax(dim=1, keepdim=True)  # shape [B, 1]
-            target_q_values_next = (
-                self.target_net(next_states).gather(1, next_actions).squeeze(1)
-            )
+            next_q_vals = self.policy_net(next_states)
+            next_acts = next_q_vals.argmax(dim=1, keepdim=True)
+            target_next_q = self.target_net(next_states).gather(1, next_acts).squeeze(1)
+            target_q_vals = rewards + self.discount_rate * target_next_q * (~dones)
 
-            # Bellman target
-            target_q_values = rewards + self.discount_rate * target_q_values_next * (
-                ~dones
-            )
-
-        # Current Q-values
-        current_q_values = (
+        current_q_vals = (
             self.policy_net(states).gather(1, actions.unsqueeze(1)).squeeze(1)
         )
 
-        # Use Huber (SmoothL1) loss
         loss_fn = nn.SmoothL1Loss()
-        loss = loss_fn(current_q_values, target_q_values)
+        loss = loss_fn(current_q_vals, target_q_vals)
 
-        # Optimize
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
 
-        # Polyak (soft) update for the target network
+        # Polyak update
         with torch.no_grad():
-            for target_param, policy_param in zip(
+            for tp, pp in zip(
                 self.target_net.parameters(), self.policy_net.parameters()
             ):
-                target_param.data.copy_(
-                    self.tau * policy_param.data + (1.0 - self.tau) * target_param.data
-                )
+                tp.data.copy_(self.tau * pp.data + (1.0 - self.tau) * tp.data)
 
     def train(self, env, episodes, validate_every=None, val_env=None):
-        """
-        Main training loop with additional logging.
-        Logs every episode’s reward and epsilon.
-        """
         logger.info(f"Starting training for {episodes} episodes...")
-        training_rewards = []
-        validation_rewards = []
+        train_rewards = []
+        val_scores = []
         state_action_history = []
 
-        for episode in range(episodes):
-            state = env.observation()
-            terminated = False
-            episode_reward = 0.0
-            episode_history = []
+        for ep in range(episodes):
+            s = env.observation()
+            done = False
+            ep_r = 0.0
+            ep_history = []
 
-            while not terminated:
-                action = self.choose_action(state)
-                next_state, reward, terminated = env.step(action)
-                shaped_reward, original_reward = self.update(
-                    state, action, reward, next_state, terminated
-                )
-                episode_history.append((state, action, original_reward, shaped_reward))
-                episode_reward += shaped_reward
-                state = next_state
+            while not done:
+                a = self.choose_action(s)
+                s_next, r, done = env.step(a)
+                shaped_r, orig_r = self.update(s, a, r, s_next, done)
+                ep_history.append((s, a, orig_r, shaped_r))
+                ep_r += shaped_r
+                s = s_next
 
-            # Collect episode stats
-            training_rewards.append(episode_reward)
-            state_action_history.append(episode_history)
+            train_rewards.append(ep_r)
+            state_action_history.append(ep_history)
 
-            # Validation if requested
-            if validate_every and val_env and (episode + 1) % validate_every == 0:
-                val_reward = self.validate(val_env)
-                validation_rewards.append((episode + 1, val_reward))
+            if validate_every and val_env and ((ep + 1) % validate_every == 0):
+                val_r = self.validate(val_env)
+                val_scores.append((ep + 1, val_r))
 
-            # Environment reset at end of episode
-            env.reset()
-
-            # Linear epsilon decay
-            if episode < self.epsilon_decay_episodes:
-                fraction = episode / float(self.epsilon_decay_episodes)
-                self.epsilon = self.epsilon_start + fraction * (
+            # Epsilon decay
+            if ep < self.epsilon_decay_episodes:
+                frac = ep / float(self.epsilon_decay_episodes)
+                self.epsilon = self.epsilon_start + frac * (
                     self.epsilon_end - self.epsilon_start
                 )
             else:
                 self.epsilon = self.epsilon_end
 
-            # Log info EVERY episode
             logger.info(
-                f"Episode {episode + 1}/{episodes}: "
-                f"Reward={episode_reward:.2f}, "
+                f"Episode {ep + 1}/{episodes}: "
+                f"Reward={ep_r:.2f}, "
                 f"Epsilon={self.epsilon:.4f}, "
-                f"TotalSteps={self.steps}, "
+                f"Steps={self.steps}, "
                 f"BufferSize={len(self.memory)}"
             )
 
-        logger.info("Training complete.")
-        return training_rewards, validation_rewards, state_action_history
+            env.reset()
 
-    def validate(self, env, num_episodes=10):
-        """
-        Evaluate current policy with epsilon=0 (greedy).
-        Returns average reward across num_episodes.
-        """
-        total_reward = 0.0
-        original_epsilon = self.epsilon
+        logger.info("Training complete.")
+        return train_rewards, val_scores, state_action_history
+
+    def validate(self, env, num_episodes=5):
+        total_r = 0.0
+        old_epsilon = self.epsilon
         self.epsilon = 0.0
 
         for _ in range(num_episodes):
-            state = env.observation()
-            terminated = False
-            episode_reward = 0.0
-
-            while not terminated:
-                action = self.choose_action(state)
-                next_state, reward, terminated = env.step(action)
-                shaped_reward, _ = self.reward_shaping(
-                    state, action, reward, next_state
-                )
-                episode_reward += shaped_reward
-                state = next_state
-
-            total_reward += episode_reward
+            s = env.observation()
+            done = False
+            ep_r = 0.0
+            while not done:
+                a = self.choose_action(s)
+                s_next, r, done = env.step(a)
+                shaped_r, _ = self.reward_shaping(s, a, r, s_next)
+                ep_r += shaped_r
+                s = s_next
+            total_r += ep_r
             env.reset()
 
-        self.epsilon = original_epsilon
-        avg_reward = total_reward / num_episodes
-        logger.info(
-            f"Validation over {num_episodes} episodes: Average Reward={avg_reward:.2f}"
-        )
-        return avg_reward
+        self.epsilon = old_epsilon
+        avg_r = total_r / num_episodes
+        logger.info(f"Validation over {num_episodes} episodes: Avg Reward={avg_r:.2f}")
+        return avg_r
 
     def save(self, path):
-        """
-        Saves model, optimizer, and relevant parameters to a checkpoint.
-        """
         torch.save(
             {
                 "policy_net_state_dict": self.policy_net.state_dict(),
@@ -352,37 +350,31 @@ class DeepQLearningAgent(BaseAgent):
                 "optimizer_state_dict": self.optimizer.state_dict(),
                 "epsilon": self.epsilon,
                 "steps": self.steps,
+                "hparams": self.hparams,
             },
             path,
         )
         logger.info(f"Model saved to {path}")
 
     def load(self, path):
-        """
-        Loads model, optimizer, and relevant parameters from a checkpoint.
-        """
         checkpoint = torch.load(path, map_location=self.device)
         self.policy_net.load_state_dict(checkpoint["policy_net_state_dict"])
         self.target_net.load_state_dict(checkpoint["target_net_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         self.epsilon = checkpoint["epsilon"]
         self.steps = checkpoint["steps"]
+        if "hparams" in checkpoint:
+            self.hparams = checkpoint["hparams"]
         logger.info(f"Model loaded from {path}")
 
-    def save_state_action_history(self, state_action_history, save_path):
-        """
-        Converts training history to a JSON-serializable format and saves to file.
-        """
-        serializable_history = []
-        for episode in state_action_history:
-            episode_data = []
-            for state, action, original_reward, shaped_reward in episode:
-                # Convert any numpy arrays in `state` to lists for JSON
-                episode_data.append(
-                    (state.tolist(), action, original_reward, shaped_reward)
-                )
-            serializable_history.append(episode_data)
+    def save_state_action_history(self, history, save_path):
+        serializable = []
+        for ep in history:
+            ep_data = []
+            for s, a, or_r, sh_r in ep:
+                ep_data.append((s.tolist(), a, or_r, sh_r))
+            serializable.append(ep_data)
 
         with open(save_path, "w") as f:
-            json.dump(serializable_history, f)
+            json.dump(serializable, f)
         logger.info(f"State-action history saved to {save_path}")
