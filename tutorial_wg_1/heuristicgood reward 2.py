@@ -56,7 +56,7 @@ def plot_heuristic_behavior(history, output_dir, episode=1):
     storage, price, hours, _ = zip(*states)
     
     # Convert hours to proper datetime sequence
-    start_date = pd.to_datetime('2007-01-01')
+    start_date = pd.to_datetime('2010-01-01')
     dates = []
     day_counter = 0
     
@@ -70,7 +70,7 @@ def plot_heuristic_behavior(history, output_dir, episode=1):
     hours_per_week = 24 * 7
     num_weeks = len(storage) // hours_per_week + (1 if len(storage) % hours_per_week else 0)
     
-    action_colors = ['red' if a == -1 else 'gold' if a == 0 else 'green' for a in actions]
+    action_colors = ['red' if a == -1 else 'yellow' if a == 0 else 'green' for a in actions]
     
     for week in range(num_weeks):
         start_idx = week * hours_per_week
@@ -92,11 +92,11 @@ def plot_heuristic_behavior(history, output_dir, episode=1):
         
         # Price plot
         plt.subplot(4,1,2)
-        plt.plot(week_dates, price[start_idx:end_idx], 'r-', label='Price')
+        plt.plot(week_dates, price[start_idx:end_idx], 'g-', label='Price')
         plt.scatter(week_dates, price[start_idx:end_idx], 
                    c=action_colors[start_idx:end_idx], label='_nolegend_')
         plt.scatter([], [], c='red', label='Sell')
-        plt.scatter([], [], c='gold', label='Hold')
+        plt.scatter([], [], c='yellow', label='Hold')
         plt.scatter([], [], c='green', label='Buy')
         plt.title(f'Electricity Price - Week {week+1}')
         plt.ylabel('$/MWh')
@@ -135,19 +135,20 @@ def plot_heuristic_behavior(history, output_dir, episode=1):
 
 def main():
     args = argparse.ArgumentParser()
-    args.add_argument('--path', type=str, default='train.xlsx')
+    args.add_argument('--path', type=str, default='validate.xlsx')
     args = args.parse_args()
 
-    # Create plots directory if it doesn't exist
-    os.makedirs('plots', exist_ok=True)
+    # Create plots directory based on data source
+    plot_dir = 'validate_plots' if 'validate' in args.path else 'train_plots'
+    os.makedirs(plot_dir, exist_ok=True)
     
     environment = DataCenterEnv(args.path)
     
     # Collect single episode history
     history = collect_episode_history(environment, threshold_buy=70, threshold_sell=140)
     
-    # Plot and save behavior
-    plot_heuristic_behavior(history, 'plots', episode=1)
+    # Plot and save behavior using correct directory
+    plot_heuristic_behavior(history, plot_dir, episode=1)
     
     # Calculate total reward
     total_reward = sum(reward for _, _, reward in history)
