@@ -258,6 +258,10 @@ class DeepQLearningAgent:
         if price > sell_threshold and action == -1:
             shaped_reward += 1.0
 
+        # Time-based incentive: Encourage buying between 00:00-06:00
+        if 0 <= hour <= 6 and action == 1:
+            shaped_reward += 1.0  # Additional bonus for buying during nighttime
+
         return shaped_reward, reward
 
     def update(self, state, action, reward, next_state, done):
