@@ -10,8 +10,8 @@ class QLearningAgent(BaseAgent):
     def __init__(
         self,
         env,
-        discount_rate=0.8,
-        learning_rate=0.9,
+        discount_rate=0.99,
+        learning_rate=0.5,
         epsilon_start=1.0,
         epsilon_end=0.0,
         model_path: str = None,

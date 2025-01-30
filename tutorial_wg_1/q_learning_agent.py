@@ -10,10 +10,10 @@ class QLearningAgent(BaseAgent):
     def __init__(
         self,
         env,
-        discount_rate=0.95,
-        learning_rate=0.8,
+        discount_rate=0.99,
+        learning_rate=0.1,
         epsilon_start=1.0,
-        epsilon_end=0.0,
+        epsilon_end=0.005,  # Keep a small non-zero final epsilon
         daily_demand=120,  # Typically matches the env's daily demand
         model_path: str = None,
     ):
@@ -21,6 +21,7 @@ class QLearningAgent(BaseAgent):
         Simplified Q-Learning Agent:
         - Ignores day/weekend entirely.
         - Uses shortfall/time-left bins as an 'urgency' feature.
+        - Now has 5 discrete actions: -1, -0.5, 0, 0.5, +1
         """
 
         super().__init__()
@@ -36,41 +37,38 @@ class QLearningAgent(BaseAgent):
         # Daily demand for shortfall calculations
         self.daily_demand = daily_demand
 
+        # Count total steps for epsilon decay
         # Assume env.price_values has shape (num_days, 24)
         self.total_train_steps = len(env.price_values) * 24
         self.current_step = 0
 
-        # -------------- PRICE BINS --------------
-        # Example: 4 bins. Adjust as needed.
-        # You could do percentiles, fixed thresholds, etc.
+        # ---------------- PRICE BINS ----------------
+        # Use clipped data to reduce effect of extreme outliers
         all_prices = env.price_values.flatten()
-        # Here we do a quick percentile-based approach:
+        capped_prices = np.clip(all_prices, None, 300)
         price_percentiles = [0, 25, 50, 75, 100]
-        self.price_bins = np.percentile(all_prices, price_percentiles)
+        self.price_bins = np.percentile(capped_prices, price_percentiles)
         self.n_price_bins = len(self.price_bins) - 1
 
-        # -------------- STORAGE BINS --------------
-        # Example: 4 intervals from 0 to 170
+        # ---------------- STORAGE BINS ----------------
         self.storage_bins = np.linspace(0, 170, 5)  # => [0, 42.5, 85, 127.5, 170]
         self.n_storage_bins = len(self.storage_bins) - 1
 
-        # -------------- HOUR BINS --------------
-        # Example: 4 intervals => [1..6], [7..12], [13..18], [19..24]
+        # ---------------- HOUR BINS ----------------
         self.hour_bins = np.arange(1, 25, 6)  # => [1, 7, 13, 19]
         self.n_hour_bins = len(self.hour_bins)
 
-        # -------------- SHORTFALL/TIME-LEFT BINS --------------
-        # Bins for ratio = (daily_demand - storage) / (24 - hour)
-        # We'll define 3 intervals => [0,2,5,∞]
+        # ---------------- SHORTFALL/TIME BINS ----------------
+        # ratio = (daily_demand - storage) / (24 - hour)
         self.shortfall_time_bins = [0, 2, 5, float("inf")]
         self.n_shortfall_time_bins = len(self.shortfall_time_bins) - 1
 
-        # -------------- ACTION SPACE --------------
-        # 3 actions => [-1, 0, +1]
-        self.n_actions = 3
+        # ---------------- ACTION SPACE (5 actions) ----------------
+        self.n_actions = 5
+        # e.g. [-1, -0.5, 0, 0.5, +1]
         self.action_space = np.linspace(-1, 1, self.n_actions)
 
-        # -------------- Q-TABLE --------------
+        # ---------------- Q-TABLE ----------------
         # shape = (storage_bins, price_bins, hour_bins, shortfall_time_bins, actions)
         if model_path and os.path.exists(model_path):
             self.load(model_path)
@@ -78,15 +76,15 @@ class QLearningAgent(BaseAgent):
             self._initialize_q_table()
 
     def _initialize_q_table(self):
-        """Initialize a zero Q-table."""
-        dimensions = (
+        """Initialize Q-table with zeros."""
+        dims = (
             self.n_storage_bins,
             self.n_price_bins,
             self.n_hour_bins,
             self.n_shortfall_time_bins,
             self.n_actions,
         )
-        self.Q_table = np.zeros(dimensions)
+        self.Q_table = np.zeros(dims)
 
     def print_and_save_q_table_stats(self, path: str):
         """Print and optionally save Q-table stats to JSON."""
@@ -109,21 +107,18 @@ class QLearningAgent(BaseAgent):
                 json.dump(stats, json_file, indent=4)
 
     def decay_epsilon(self):
-        """Linearly decay epsilon from epsilon_start to epsilon_end over total steps."""
-        self.epsilon = max(
-            self.epsilon_end,
-            self.epsilon_start
-            - (self.epsilon_start - self.epsilon_end)
-            * (self.current_step / self.total_train_steps),
-        )
+        """
+        Exponential decay with a small final epsilon_end floor.
+        """
+        k = 5.0 / self.total_train_steps  # tweak "5.0" to control the rate
+        self.epsilon = self.epsilon_start * np.exp(-k * self.current_step)
         self.current_step += 1
+        # Ensure epsilon never goes below epsilon_end
+        if self.epsilon < self.epsilon_end:
+            self.epsilon = self.epsilon_end
 
     def _shortfall_time_left_bin(self, storage: float, hour: float) -> int:
-        """
-        Calculate ratio = (daily_demand - storage) / (24 - hour), then bin it.
-        If (24 - hour) <= 0 but shortfall > 0, ratio=∞ => high urgency.
-        Bins are [0,2,5,∞].
-        """
+        """Bin ratio = (daily_demand - storage) / max(1, (24 - hour))."""
         shortfall = max(0.0, self.daily_demand - storage)
         time_left = max(0.0, 24 - hour)
         if time_left <= 0:
@@ -136,50 +131,75 @@ class QLearningAgent(BaseAgent):
 
     def discretize_state(self, state):
         """
-        State from env = (storage, price, hour, day)
-        We ignore 'day'. 
-        We map:
-          - storage -> storage_idx
-          - price   -> price_idx
-          - hour    -> hour_idx
-          - ratio   -> shortfall_time_idx
+        State from env = (storage, price, hour, day).
+        We ignore 'day'.
         """
-        storage, price, hour, _ = state  # ignore day
+        storage, price, hour, _ = state
 
-        # Storage
+        # storage
         storage_idx = np.digitize(storage, self.storage_bins) - 1
         storage_idx = min(storage_idx, self.n_storage_bins - 1)
 
-        # Price
+        # price
         price_idx = np.digitize(price, self.price_bins) - 1
         price_idx = min(price_idx, self.n_price_bins - 1)
 
-        # Hour
+        # hour
         hour_idx = np.digitize(hour, self.hour_bins) - 1
         hour_idx = min(hour_idx, self.n_hour_bins - 1)
 
-        # Shortfall/time-left ratio
-        shortfall_time_idx = self._shortfall_time_left_bin(storage, hour)
+        # shortfall/time-left
+        st_ratio_idx = self._shortfall_time_left_bin(storage, hour)
 
-        return storage_idx, price_idx, hour_idx, shortfall_time_idx
+        return storage_idx, price_idx, hour_idx, st_ratio_idx
+    
+    def reward_shaping(self, state, reward):
+        """
+        Example shaping: penalize big shortfall/time-left ratio
+        so the agent won't wait too long before buying.
+        Customize thresholds/penalties as desired.
+        """
+        # Extract ratio directly for convenience:
+        storage, _, hour, _ = state
+        shortfall = max(0.0, self.daily_demand - storage)
+        time_left = max(0.0, 24 - hour)
+        if time_left <= 0:
+            ratio = float("inf") if shortfall > 0 else 0.0
+        else:
+            ratio = shortfall / time_left
+
+        shaped_reward = reward
+
+        # Example logic:
+        if ratio > 3 and ratio <= 5:
+            shaped_reward -= 1.0   # small penalty
+        elif ratio > 5:
+            shaped_reward -= 2.0   # bigger penalty
+
+        return shaped_reward
 
     def choose_action(self, state):
         """
-        Epsilon-greedy action selection: random with prob epsilon, else best from Q-table.
+        Epsilon-greedy action selection.
+        With n_actions=5 => [-1, -0.5, 0, +0.5, +1].
         """
         if np.random.random() < self.epsilon:
-            return np.random.randint(self.n_actions)  # random among {0,1,2}
+            return np.random.randint(self.n_actions)
         else:
             s_idx, p_idx, h_idx, st_idx = self.discretize_state(state)
             return np.argmax(self.Q_table[s_idx, p_idx, h_idx, st_idx])
 
     def update(self, state, action, reward, next_state, done):
         """
-        Update Q-value with Bellman equation:
-         Q(s,a) ← Q(s,a) + α * [r + γ*max_a' Q(s',a') - Q(s,a)]
+        Q(s,a) ← Q(s,a) + α [r + γ max_a' Q(s',a') − Q(s,a)]
         """
         s_idx, p_idx, h_idx, st_idx = self.discretize_state(state)
         ns_idx, np_idx, nh_idx, nst_idx = self.discretize_state(next_state)
+
+
+        # >>> REWARD SHAPING MOD HERE <<<
+        shaped_reward = self.reward_shaping(state, reward)
+        # >>> END REWARD SHAPING MOD <<<
 
         current_q = self.Q_table[s_idx, p_idx, h_idx, st_idx, action]
 
@@ -187,13 +207,12 @@ class QLearningAgent(BaseAgent):
             target = reward
         else:
             next_max_q = np.max(self.Q_table[ns_idx, np_idx, nh_idx, nst_idx])
-            target = reward + self.discount_rate * next_max_q
+            target = shaped_reward + self.discount_rate * next_max_q
 
-        # Update
         self.Q_table[s_idx, p_idx, h_idx, st_idx, action] += \
             self.learning_rate * (target - current_q)
 
-        # Epsilon decay each step
+        # Decay epsilon after each update
         self.decay_epsilon()
 
     def train(
@@ -206,7 +225,6 @@ class QLearningAgent(BaseAgent):
         """
         Main training loop over multiple episodes. Optionally validate at intervals.
         """
-        # Reset
         self.current_step = 0
         self.epsilon = self.epsilon_start
         self.total_train_steps = len(env.price_values) * 24 * episodes
@@ -223,7 +241,7 @@ class QLearningAgent(BaseAgent):
 
             while not terminated:
                 action_idx = self.choose_action(state)
-                action = self.action_space[action_idx]  # convert idx to -1,0,1
+                action = self.action_space[action_idx]
                 next_state, reward, terminated = env.step(action)
 
                 self.update(state, action_idx, reward, next_state, terminated)
@@ -240,6 +258,7 @@ class QLearningAgent(BaseAgent):
                 f"Epsilon = {self.epsilon:.4f}"
             )
 
+            # Validation if requested
             if validate_every and val_env and (episode + 1) % validate_every == 0:
                 avg_val_reward = self.validate(val_env)
                 validation_rewards.append((episode + 1, avg_val_reward))
@@ -251,11 +270,35 @@ class QLearningAgent(BaseAgent):
             env.reset()
 
         return training_rewards, validation_rewards, state_action_history
+    
+    def reward_shaping(self, state, reward):
+        """
+        Example shaping: penalize big shortfall/time-left ratio
+        so the agent won't wait too long before buying.
+        Customize thresholds/penalties as desired.
+        """
+        # Extract ratio directly for convenience:
+        storage, _, hour, _ = state
+        shortfall = max(0.0, self.daily_demand - storage)
+        time_left = max(0.0, 24 - hour)
+        if time_left <= 0:
+            ratio = float("inf") if shortfall > 0 else 0.0
+        else:
+            ratio = shortfall / time_left
+
+        shaped_reward = reward
+        if hour < 8 and storage > 50:
+            shaped_reward += 1  # small bonus
+        # Example logic:
+        if ratio > 3 and ratio <= 5:
+            shaped_reward -= 1.0   # small penalty
+        elif ratio > 5:
+            shaped_reward -= 2.0   # bigger penalty
+
+        return shaped_reward
 
     def validate(self, env, num_episodes: int = 5) -> float:
-        """
-        Evaluate performance with epsilon=0 (no random exploration).
-        """
+        """Evaluate with epsilon=0 (no random exploration)."""
         original_epsilon = self.epsilon
         self.epsilon = 0.0
 
@@ -296,7 +339,18 @@ class QLearningAgent(BaseAgent):
                 "total_train_steps", self.total_train_steps
             )
 
-    def save_state_action_history(self, state_action_history: list, path: str):
-        """Save (state, action) history per episode to JSON."""
-        with open(path, "w") as f:
-            json.dump(state_action_history, f, indent=2)
+    def save_state_action_history(self, history, save_path):
+        """Save state-action history in a JSON-friendly format."""
+        serializable_history = []
+        
+        for episode in history:
+            episode_data = []
+            for state, action in episode:
+                # Convert numpy arrays/values to Python native types
+                state_list = [float(x) for x in state]
+                action_val = float(action)
+                episode_data.append([state_list, action_val])
+            serializable_history.append(episode_data)
+        
+        with open(save_path, 'w') as f:
+            json.dump(serializable_history, f, indent=2)
