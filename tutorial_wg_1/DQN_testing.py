@@ -196,6 +196,8 @@ class DeepQLearningAgent:
         was_forced = False
         reason = None
 
+        # TODO: Selling when storage level is 0 is invalid
+
         # Force buy if shortfall can't be met
         if shortfall > max_possible_buy:
             needed_now = shortfall - max_possible_buy
@@ -230,6 +232,7 @@ class DeepQLearningAgent:
         Returns:
             numpy.ndarray: Normalized state values
         """
+        # TODO: Normalize st all values between 0 and 1
         return np.array(
             [
                 state[0] / self.storage_scale,
