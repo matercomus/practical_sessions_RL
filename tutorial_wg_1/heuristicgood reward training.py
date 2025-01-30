@@ -36,7 +36,6 @@ def heuristic_action(price, storage, hour, threshold_sell=150, threshold_buy=70)
     return 0.0
 
 def collect_episode_history(environment, threshold_buy=70, threshold_sell=140):
-    """Collect state/action/reward history for one episode"""
     state = environment.observation()
     history = []
     terminated = False
@@ -44,12 +43,20 @@ def collect_episode_history(environment, threshold_buy=70, threshold_sell=140):
     while not terminated:
         storage, price, hour, _ = state
         action = heuristic_action(price, storage, hour, threshold_buy, threshold_sell)
+        print_state_contents(state)
         next_state, reward, terminated = environment.step(action)
-        
         history.append((state, action, reward))
         state = next_state
-        
+    
     return history
+
+def print_state_contents(state):
+    storage, price, hour, date = state
+    print("\nState Contents:")
+    print(f"Storage: {storage} MWh")
+    print(f"Price: {price} $/MWh")
+    print(f"Hour: {hour}")
+    print(f"Date: {date}")  # This should contain the actual date from the Excel file
 
 def plot_heuristic_behavior(history, output_dir, episode=1):
     states, actions, rewards = zip(*history)
@@ -131,28 +138,54 @@ def plot_heuristic_behavior(history, output_dir, episode=1):
         plt.savefig(os.path.join(output_dir, f'episode_{episode}_week_{week+1}_behavior.png'))
         plt.close()
 
-
+def print_history(history):
+    print("\nComplete Episode History:")
+    print("Day | Hour | Storage | Price  | Action | Reward")
+    print("-" * 50)
+    
+    current_day = 1
+    prev_hour = 0
+    
+    for state, action, reward in history:
+        storage, price, hour, _ = state
+        hour_of_day = int(hour % 24) + 1
+        
+        # Increment day when hour resets
+        if hour_of_day < prev_hour:
+            current_day += 1
+        prev_hour = hour_of_day
+            
+        print(f"{current_day:3d} | {hour_of_day:4d} | {storage:7.2f} | {price:6.2f} | {action:6.1f} | {reward:6.2f}")
 
 def main():
     args = argparse.ArgumentParser()
-    args.add_argument('--path', type=str, default='validate.xlsx')
+    args.add_argument('--path', type=str, default='train.xlsx')
     args = args.parse_args()
 
-    # Create plots directory based on data source
-    plot_dir = 'validate_plots' if 'validate' in args.path else 'train_plots'
-    os.makedirs(plot_dir, exist_ok=True)
+    # plot_dir = 'validate_plots' if 'validate' in args.path else 'train_plots'
+    # os.makedirs(plot_dir, exist_ok=True)
     
     environment = DataCenterEnv(args.path)
     
-    # Collect single episode history
+    # Collect history once
     history = collect_episode_history(environment, threshold_buy=70, threshold_sell=140)
     
-    # Plot and save behavior using correct directory
-    plot_heuristic_behavior(history, plot_dir, episode=1)
+    # Verify history length
+    print(f"\nTotal timesteps in history: {len(history)}")
+    
+    # Print full history
+    # print_history(history)
+    state = environment.observation()
+    print_state_contents(state)
     
     # Calculate total reward
     total_reward = sum(reward for _, _, reward in history)
-    print(f"Total Reward: {total_reward:.2f}")
+    print(f"\nTotal Reward: {total_reward:.2f}")
 
+if __name__ == "__main__":
+    main()
+
+
+    
 if __name__ == "__main__":
     main()

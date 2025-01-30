@@ -56,6 +56,7 @@ def main():
         while not terminated:
             # Get current state information
             storage, price, hour, _ = state
+            print(f"Storage: {storage} MWh", f"Price: {price} $/MWh", f"Hour: {hour}", f"Date: {_}")
             
             # Determine action based on state
             action = heuristic_action(price, storage, hour, threshold_buy=70, threshold_sell=140)

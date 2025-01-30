@@ -1,0 +1,15 @@
+{
+    "Storage bins": 17,
+    "Price bins": 5,
+    "Hour bins": 12,
+    "Day bins": 7,
+    "Actions": 3,
+    "Q-table shape": [
+        17,
+        5,
+        12,
+        7,
+        3
+    ],
+    "Total parameters": 21420
+}
