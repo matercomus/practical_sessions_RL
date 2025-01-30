@@ -1,25 +1,41 @@
 from env import DataCenterEnv
-from q_learning_agent import QLearningAgent
 import argparse
 import os
 from datetime import datetime
 from plotting_utils import plot_metrics, plot_agent_behavior
+from q_learning_agent import QLearningAgent
 
 
 def create_output_directory():
     """Create and return path to timestamped output directory"""
+    # Get project directory path
+    project_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # Create timestamp
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    output_dir = f"run_{run_timestamp}"
-    os.makedirs(output_dir, exist_ok=True)
+    
+    # Create output directory path in project directory
+    output_dir = os.path.join(project_dir, f"run_{run_timestamp}")
+    
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+    except OSError as e:
+        print(f"Error creating output directory: {e}")
+        # Fallback to user's home directory
+        home_dir = os.path.expanduser("~")
+        output_dir = os.path.join(home_dir, "rl_outputs", f"run_{run_timestamp}")
+        os.makedirs(output_dir, exist_ok=True)
+        
+    print(f"Output directory created at: {output_dir}")
     return output_dir
 
 
 def main():
     # Parse arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument("--train-path", type=str, default="./data/train.xlsx")
-    parser.add_argument("--val-path", type=str, default="./data/validate.xlsx")
-    parser.add_argument("--episodes", type=int, default=1000)
+    parser.add_argument("--train-path", type=str, default="train.xlsx")
+    parser.add_argument("--val-path", type=str, default="validate.xlsx")
+    parser.add_argument("--episodes", type=int, default=500)
     parser.add_argument("--validate-every", type=int, default=50)
     parser.add_argument("--make-graphs", action="store_true")
     parser.add_argument("--load-model", type=str, default=None)
