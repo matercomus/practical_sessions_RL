@@ -35,7 +35,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--train-path", type=str, default="train.xlsx")
     parser.add_argument("--val-path", type=str, default="validate.xlsx")
-    parser.add_argument("--episodes", type=int, default=500)
+    parser.add_argument("--episodes", type=int, default=100)
     parser.add_argument("--validate-every", type=int, default=50)
     parser.add_argument("--make-graphs", action="store_true")
     parser.add_argument("--load-model", type=str, default=None)
