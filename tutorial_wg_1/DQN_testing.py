@@ -300,27 +300,20 @@ class DeepQLearningAgent:
         """
         Shape the reward by:
           1) Using tanh to keep the final shaped reward in [-1, 1].
-          2) Adding a reward for buying when the price is below a certain threshold.
+          2) Adding a reward for buying between hours 0-7.
         """
         scaled_reward = reward
-
-        # Extract price from the state
-        _, price, _, _ = state
 
         # Apply a tanh-based saturating function
         # This will smoothly restrict the final shaped_reward to [-1, 1].
         alpha = 1.0  # scale factor for tanh; adjust as needed
         shaped_reward = float(np.tanh(scaled_reward / alpha) * alpha)
 
-        # Define the thresholds
-        buy_threshold = 70.0
-        sell_threshold = 180.0
+        # Extract hour from the state
+        _, _, hour, _ = state
 
-        # Add reward for buying when the price is below the threshold
-        if executed_action > 0 and price < buy_threshold:
-            shaped_reward += 1.0
-        # Add reward for selling when the price is above the threshold
-        if executed_action < 0 and price > sell_threshold:
+        # Add reward for buying between hours 0-7
+        if executed_action > 0 and 0 <= hour <= 7:
             shaped_reward += 1.0
 
         return shaped_reward, reward
