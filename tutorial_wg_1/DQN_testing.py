@@ -137,7 +137,7 @@ class DeepQLearningAgent:
             self.price_max = np.max(self.env.price_values)
         else:
             self.price_min = 0.0
-            self.price_max = 100.0
+            self.price_max = 1000.0
 
         # Setup device and networks
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -237,7 +237,7 @@ class DeepQLearningAgent:
         1. storage_level: Bounded by [0, storage_scale]
         2. price: Using min-max normalization based on historical price range
         3. hour: 24-hour format [0, 23]
-        4. day: Days of week [1, 7]
+        4. day: Days of data (1 to total_days)
 
         Args:
             state: Raw state values (storage_level, price, hour, day)
@@ -257,14 +257,20 @@ class DeepQLearningAgent:
             norm_price = np.clip((price - price_min) / (price_max - price_min), 0, 1)
         else:
             # Fallback to simple scaling if no historical prices available
-            norm_price = np.clip(price / self.price_scale, 0, 1)
+            norm_price = np.clip(price / 1000.0, 0, 1)
 
         # Normalize hour: [0, 23] -> [0, 1]
         norm_hour = hour / 23.0
 
-        # Normalize day: [1, 7] -> [0, 1]
-        norm_day = (day - 1) / 6.0
+        # Normalize day: [1, total_days] -> [0, 1]
+        if hasattr(self.env, "test_data"):
+            total_days = len(self.env.test_data)
+            norm_day = (day - 1) / (total_days - 1)
+        else:
+            # Fallback if test_data is not available assume 3 years
+            norm_day = (day - 1) / (3 * 365)
 
+        print(f"norm_storage: {norm_storage}, norm_price: {norm_price}, norm_hour: {norm_hour}, norm_day: {norm_day}")
         return np.array(
             [norm_storage, norm_price, norm_hour, norm_day], dtype=np.float32
         )
