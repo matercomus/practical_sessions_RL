@@ -271,37 +271,23 @@ class DeepQLearningAgent:
 
     def reward_shaping(self, state, chosen_action, executed_action, reward, next_state):
         """
-        Shape the reward to encourage desired behavior.
-
-        Args:
-            state: Current state
-            chosen_action: Action chosen by agent
-            executed_action: Action actually executed
-            reward: Original reward
-            next_state: Resulting state
-
-        Returns:
-            tuple: (shaped_reward, original_reward)
+        Shape the reward by:
+          1) Scaling the environment's reward,
+          2) Penalizing forced/mismatched actions,
+          3) Using tanh to keep the final shaped reward in [-1, 1].
         """
-        shaped_reward = reward / 100.0  # Scale down rewards
-        storage, price, hour, _ = state
 
-        # Price-based incentives
-        buy_threshold = 70
-        sell_threshold = 150
+        scaled_reward = reward
 
-        if executed_action > 0 and price < buy_threshold:
-            shaped_reward += 1.0  # Bonus for buying at low prices
-        if executed_action < 0 and price > sell_threshold:
-            shaped_reward += 1.0  # Bonus for selling at high prices
+        # Penalize the mismatch between chosen_action and executed_action
+        delta_action = abs(chosen_action - executed_action)
+        if delta_action > 1e-5:
+            scaled_reward += self.invalid_action_penalty * delta_action
 
-        # Time-based incentive
-        if 0 <= hour <= 6 and executed_action > 0:
-            shaped_reward += 1.0  # Bonus for buying during off-peak hours
-
-        # Penalty for invalid actions
-        if abs(chosen_action - executed_action) > 1e-5:
-            shaped_reward += self.invalid_action_penalty
+        # Apply a tanh-based saturating function
+        #     This will smoothly restrict the final shaped_reward to [-1, 1].
+        alpha = 1.0  # scale factor for tanh; adjust as needed
+        shaped_reward = float(np.tanh(scaled_reward / alpha) * alpha)
 
         return shaped_reward, reward
 
