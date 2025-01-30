@@ -44,7 +44,7 @@ def load_model_and_params(run_folder):
     if not os.path.exists(checkpoint_path):
         raise FileNotFoundError(f"No model checkpoint found at {checkpoint_path}")
 
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
 
     # Create and load the model
     model = DQN(input_dim=4, output_dim=3).to(device)
@@ -115,14 +115,19 @@ def create_qvalue_plots(
                         dtype=np.float32,
                     )
 
-                    state_tensor = torch.FloatTensor(norm_state).unsqueeze(0)
+                    # Get device from model and move tensor to the same device
+                    device = next(model.parameters()).device
+                    state_tensor = (
+                        torch.tensor(norm_state, dtype=torch.float32)
+                        .unsqueeze(0)
+                        .to(device)
+                    )
 
                     with torch.no_grad():
                         q_vals = model(state_tensor).cpu().numpy()[0]
                         q_values["sell"][j, i] = q_vals[0]
                         q_values["hold"][j, i] = q_vals[1]
                         q_values["buy"][j, i] = q_vals[2]
-
             # Create visualization with three subplots
             fig, axes = plt.subplots(1, 3, figsize=(18, 5))
             fig.suptitle(f"Q-Values at Hour {hour:02d}, Day {day}")
