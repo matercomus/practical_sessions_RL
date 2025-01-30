@@ -1,5 +1,7 @@
 import matplotlib.pyplot as plt
+import json
 import os
+import argparse
 from datetime import timedelta
 
 
@@ -63,15 +65,17 @@ def plot_agent_behavior(
             if not interval_history:
                 continue
 
-            (
-                states,
-                chosen_actions,
-                executed_action,
-                original_rewards,
-                reshaped_rewards,
-                was_forced,
-                reason,
-            ) = zip(*interval_history)
+            # Extract values from dictionaries using proper keys
+            states = [step["state"] for step in interval_history]
+            chosen_actions = [step["chosen_action"] for step in interval_history]
+            executed_action = [step["executed_action"] for step in interval_history]
+            original_rewards = [step["original_reward"] for step in interval_history]
+            reshaped_rewards = [
+                step["shaped_reward"] for step in interval_history
+            ]  # Corrected key name
+            was_forced = [step["was_forced"] for step in interval_history]
+            reason = [step["force_reason"] for step in interval_history]
+
             storage, price, _ = zip(*[state[:3] for state in states])
 
             time_labels = [
@@ -79,19 +83,46 @@ def plot_agent_behavior(
                 for i in range(len(storage))
             ]
 
-            # Create action color mapping
-            action_colors = []
-            for action in chosen_actions:
-                if action == 1:
-                    action_colors.append("green")  # Buy
-                elif action == -1:
-                    action_colors.append("red")  # Sell
+            # Prepare action visualization parameters
+            executed_actions = list(executed_action)
+            chosen_actions = list(chosen_actions)
+            was_forced_list = list(was_forced)
+
+            executed_colors = []
+            edge_colors = []
+            discrepancy_indices = []
+            forced_indices = []
+
+            for i in range(len(executed_actions)):
+                ea = executed_actions[i]
+                ca = chosen_actions[i]
+                wf = was_forced_list[i]
+
+                # Executed action color
+                if ea > 0:
+                    color = "green"
+                elif ea < 0:
+                    color = "red"
                 else:
-                    action_colors.append("yellow")  # Hold
+                    color = "yellow"
+                executed_colors.append(color)
+
+                # Edge color for action mismatch
+                ea_dir = 1 if ea > 0 else (-1 if ea < 0 else 0)
+                ca_dir = ca
+                if ca_dir != ea_dir:
+                    edge_colors.append("black")
+                    discrepancy_indices.append(i)
+                else:
+                    edge_colors.append("none")
+
+                # Track forced actions
+                if wf:
+                    forced_indices.append(i)
 
             step_size = max(1, len(storage) // 10)
 
-            plt.figure(figsize=(14, 12))  # Increased figure height
+            plt.figure(figsize=(14, 12))
 
             # Storage plot
             plt.subplot(4, 1, 1)
@@ -109,21 +140,36 @@ def plot_agent_behavior(
             plt.legend()
             plt.ylim(min(storage) - 1, max(storage) + 1)
 
-            # Price plot with action markers
+            # Price plot with action visualization
             plt.subplot(4, 1, 2)
-            plt.plot(
-                range(len(price)), price, "k-", label="Price"
-            )  # Black line for price
-            # Scatter plot with action colors
+            plt.plot(range(len(price)), price, "k-", label="Price")
+            # Plot executed actions
             plt.scatter(
                 range(len(price)),
                 price,
-                c=action_colors,
-                s=40,  # Marker size
-                edgecolors="black",
+                c=executed_colors,
+                s=40,
+                edgecolors=edge_colors,
                 linewidths=0.5,
-                zorder=2,  # Ensure markers are on top
+                zorder=2,
+                marker="o",
             )
+            # Overlay forced actions
+            if forced_indices:
+                forced_x = [x for x in forced_indices]
+                forced_y = [price[x] for x in forced_indices]
+                plt.scatter(
+                    forced_x,
+                    forced_y,
+                    marker="X",
+                    s=60,
+                    edgecolors="black",
+                    facecolors="none",
+                    linewidths=1,
+                    zorder=3,
+                    label="Forced Action",
+                )
+
             plt.xticks(
                 range(0, len(price), step_size),
                 time_labels[::step_size],
@@ -131,38 +177,58 @@ def plot_agent_behavior(
                 ha="right",
             )
             plt.ylabel("Price (Actions)")
-            plt.legend(
-                handles=[
-                    plt.Line2D(
-                        [0],
-                        [0],
-                        marker="o",
-                        color="w",
-                        markerfacecolor="green",
-                        markersize=10,
-                        label="Buy",
-                    ),
-                    plt.Line2D(
-                        [0],
-                        [0],
-                        marker="o",
-                        color="w",
-                        markerfacecolor="red",
-                        markersize=10,
-                        label="Sell",
-                    ),
-                    plt.Line2D(
-                        [0],
-                        [0],
-                        marker="o",
-                        color="w",
-                        markerfacecolor="yellow",
-                        markersize=10,
-                        label="Hold",
-                    ),
-                ]
-            )
-            plt.ylim(min(price) - 5, max(price) + 5)
+            # Legend
+            legend_handles = [
+                plt.Line2D(
+                    [0],
+                    [0],
+                    marker="o",
+                    color="w",
+                    markerfacecolor="green",
+                    markersize=10,
+                    label="Buy (Executed)",
+                ),
+                plt.Line2D(
+                    [0],
+                    [0],
+                    marker="o",
+                    color="w",
+                    markerfacecolor="red",
+                    markersize=10,
+                    label="Sell (Executed)",
+                ),
+                plt.Line2D(
+                    [0],
+                    [0],
+                    marker="o",
+                    color="w",
+                    markerfacecolor="yellow",
+                    markersize=10,
+                    label="Hold (Executed)",
+                ),
+                plt.Line2D(
+                    [0],
+                    [0],
+                    marker="o",
+                    color="black",
+                    linestyle="None",
+                    markersize=10,
+                    label="Action Override",
+                    markerfacecolor="none",
+                    markeredgewidth=1,
+                ),
+                plt.Line2D(
+                    [0],
+                    [0],
+                    marker="X",
+                    color="black",
+                    linestyle="None",
+                    markersize=10,
+                    label="Forced Action",
+                    markeredgewidth=1,
+                ),
+            ]
+            plt.legend(handles=legend_handles, loc="upper right")
 
             # Original Reward plot
             plt.subplot(4, 1, 3)
@@ -212,3 +278,31 @@ def plot_agent_behavior(
             print(
                 f"Behavior graph for Episode {episode_idx + 1}, Interval {interval_start // steps_per_interval + 1} saved at {behavior_graph_path}"
             )
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model-run-dir", type=str, default=".")
+    parser.add_argument("--n-days", type=int, default=7)
+    args = parser.parse_args()
+
+    output_dir_bp = os.path.join(args.model_run_dir, "agent_behavior_plots")
+    os.makedirs(output_dir_bp, exist_ok=True)
+
+    state_action_history_path = os.path.join(
+        args.model_run_dir, "state_action_history.json"
+    )
+    with open(state_action_history_path, "r") as f:
+        state_action_history = json.load(f)
+
+    plot_agent_behavior(
+        state_action_history,
+        output_dir=output_dir_bp,
+        n_days=args.n_days,
+    )
+
+    print(f"Agent behavior plots saved at {output_dir_bp}")
+
+
+if __name__ == "__main__":
+    main()

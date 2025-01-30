@@ -2,8 +2,9 @@ from env import DataCenterEnv
 from DQN_testing import DeepQLearningAgent
 import argparse
 import os
+import numpy as np
 from datetime import datetime
-from plotting_utils import plot_metrics, plot_agent_behavior
+from plotting_utils import plot_metrics
 
 
 def create_output_directory(output_dir=".", run_name=None):
@@ -24,10 +25,7 @@ def main():
     parser.add_argument("--val-path", type=str, default="./data/validate.xlsx")
     parser.add_argument("--episodes", type=int, default=1000)
     parser.add_argument("--validate-every", type=int, default=50)
-    parser.add_argument("--make-graphs", action="store_true")
     parser.add_argument("--load-model", type=str, default=None)
-    parser.add_argument("--plot-interval-days", type=int, default=7)
-    parser.add_argument("--save-state-action-history", action="store_true")
     parser.add_argument("--output-dir", type=str, default=".")
     parser.add_argument("--run-name", type=str, default=None)
     args = parser.parse_args()
@@ -54,36 +52,20 @@ def main():
         agent.print_and_save_q_table_stats(output_dir)
 
     # Train agent
-    training_rewards, validation_rewards, state_action_history, forced_action_stats = agent.train(
+    training_rewards, validation_rewards, state_action_history, _ = agent.train(
         train_env,
         episodes=args.episodes,
         validate_every=args.validate_every,
         val_env=val_env,
     )
 
-    # Save model
-    model_path = os.path.join(output_dir, "model.h5")
-    agent.save(model_path)
-    print(f"Model saved at {model_path}")
-
-    # Save state-action history if requested
-    if args.save_state_action_history:
-        filename = "state_action_history.json"
-        save_path = os.path.join(output_dir, filename)
-        agent.save_state_action_history(state_action_history)
-        print(f"State-action history saved at {save_path}")
-
-    # Plot metrics if requested
-    if args.make_graphs:
-        plot_metrics(training_rewards, validation_rewards, output_dir)
-        plot_agent_behavior(
-            state_action_history,
-            output_dir,
-            n_days=args.plot_interval_days,
-        )
+    agent.save_state_action_history(state_action_history)
+    plot_metrics(training_rewards, validation_rewards, output_dir)
 
     # Print final metrics
-    print(f"Total reward after {args.episodes} episodes: {sum(training_rewards):.2f}")
+    print(
+        f"Mean reward after {args.episodes} episodes: {np.mean(training_rewards):.2f}"
+    )
 
 
 if __name__ == "__main__":

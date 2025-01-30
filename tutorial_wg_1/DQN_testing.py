@@ -452,6 +452,8 @@ class DeepQLearningAgent:
                 ep_r += shaped_r
                 s = s_next
 
+            self.save()
+
             # Store episode results
             train_rewards.append(ep_r)
             state_action_history.append(ep_history)
@@ -567,13 +569,14 @@ class DeepQLearningAgent:
             json.dump(self.hparams, f, indent=2)
         logger.info(f"Hyperparameters saved to {self.hparams_json_path}")
 
-    def save(self, path):
+    def save(self):
         """
         Save model checkpoint including networks, optimizer state, and parameters.
 
         Args:
             path: Path to save checkpoint
         """
+        path = os.path.join(self.output_dir, "model_checkpoint.pth")
         torch.save(
             {
                 "policy_net_state_dict": self.policy_net.state_dict(),
