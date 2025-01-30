@@ -196,7 +196,10 @@ class DeepQLearningAgent:
         was_forced = False
         reason = None
 
-        # TODO: Selling when storage level is 0 is invalid
+        if storage_level == 0 and action < 0:
+            action = 0.0
+            was_forced = True
+            reason = "no_storage"
 
         # Force buy if shortfall can't be met
         if shortfall > max_possible_buy:
@@ -398,7 +401,12 @@ class DeepQLearningAgent:
         train_rewards = []
         val_scores = []
         state_action_history = []
-        forced_action_stats = {"forced_buy": 0, "prevented_sell": 0, "total_steps": 0}
+        forced_action_stats = {
+            "forced_buy": 0,
+            "prevented_sell": 0,
+            "total_steps": 0,
+            "no_storage": 0,
+        }
 
         for ep in range(episodes):
             s = env.observation()
@@ -415,7 +423,7 @@ class DeepQLearningAgent:
 
                 # Track statistics
                 forced_action_stats["total_steps"] += 1
-                if was_forced:
+                if was_forced and reason:
                     forced_action_stats[reason] += 1
 
                 # Environment step
@@ -428,16 +436,17 @@ class DeepQLearningAgent:
 
                 # Log experience
                 ep_history.append(
-                    (
-                        s,
-                        chosen_action,
-                        executed_action,
-                        orig_r,
-                        shaped_r,
-                        was_forced,
-                        reason,
-                    )
+                    {
+                        "state": s,
+                        "chosen_action": chosen_action,
+                        "executed_action": executed_action,
+                        "original_reward": orig_r,
+                        "shaped_reward": shaped_r,
+                        "was_forced": was_forced,
+                        "force_reason": reason,
+                    }
                 )
+
                 ep_r += shaped_r
                 s = s_next
 
@@ -464,6 +473,7 @@ class DeepQLearningAgent:
             forced_rate = (
                 forced_action_stats["forced_buy"]
                 + forced_action_stats["prevented_sell"]
+                + forced_action_stats["no_storage"]
             ) / max(1, forced_action_stats["total_steps"])
 
             logger.info(
@@ -602,15 +612,31 @@ class DeepQLearningAgent:
 
         Args:
             history: List of episode histories
-            save_path: Path to save the history
         """
         serializable = []
         for ep in history:
             ep_data = []
-            for s, chosen_a, executed_a, orig_r, shaped_r, forced, reason in ep:
+            for step in ep:
+                # Extract values from the step dictionary
+                s = step["state"]
+                chosen_a = step["chosen_action"]
+                executed_a = step["executed_action"]
+                orig_r = step["original_reward"]
+                shaped_r = step["shaped_reward"]
+                forced = step["was_forced"]
+                reason = step["force_reason"]
+
+                # Convert state to list
+                if isinstance(s, np.ndarray):
+                    state_list = s.tolist()
+                elif isinstance(s, tuple):
+                    state_list = list(s)
+                else:
+                    state_list = list(s)  # Fallback for other types
+
                 ep_data.append(
                     {
-                        "state": s.tolist(),
+                        "state": state_list,
                         "chosen_action": float(chosen_a),
                         "executed_action": float(executed_a),
                         "original_reward": float(orig_r),

@@ -68,13 +68,11 @@ def plot_agent_behavior(
             # Extract values from dictionaries using proper keys
             states = [step["state"] for step in interval_history]
             chosen_actions = [step["chosen_action"] for step in interval_history]
-            executed_action = [step["executed_action"] for step in interval_history]
+            executed_actions = [step["executed_action"] for step in interval_history]
             original_rewards = [step["original_reward"] for step in interval_history]
-            reshaped_rewards = [
-                step["shaped_reward"] for step in interval_history
-            ]  # Corrected key name
+            reshaped_rewards = [step["shaped_reward"] for step in interval_history]
             was_forced = [step["was_forced"] for step in interval_history]
-            reason = [step["force_reason"] for step in interval_history]
+            reasons = [step["force_reason"] for step in interval_history]
 
             storage, price, _ = zip(*[state[:3] for state in states])
 
@@ -83,102 +81,124 @@ def plot_agent_behavior(
                 for i in range(len(storage))
             ]
 
-            # Prepare action visualization parameters
-            executed_actions = list(executed_action)
-            chosen_actions = list(chosen_actions)
-            was_forced_list = list(was_forced)
-
+            # Prepare visualization parameters
             executed_colors = []
             edge_colors = []
-            discrepancy_indices = []
             forced_indices = []
+            reason_markers = []
 
-            for i in range(len(executed_actions)):
-                ea = executed_actions[i]
-                ca = chosen_actions[i]
-                wf = was_forced_list[i]
-
+            for i, (ea, ca, wf, reason) in enumerate(
+                zip(executed_actions, chosen_actions, was_forced, reasons)
+            ):
                 # Executed action color
                 if ea > 0:
-                    color = "green"
+                    fill_color = "green"
                 elif ea < 0:
-                    color = "red"
+                    fill_color = "red"
                 else:
-                    color = "yellow"
-                executed_colors.append(color)
+                    fill_color = "yellow"
+                executed_colors.append(fill_color)
 
-                # Edge color for action mismatch
-                ea_dir = 1 if ea > 0 else (-1 if ea < 0 else 0)
-                ca_dir = ca
-                if ca_dir != ea_dir:
-                    edge_colors.append("black")
-                    discrepancy_indices.append(i)
+                # Edge color (chosen action)
+                if ca > 0:
+                    edge_color = "darkgreen"
+                elif ca < 0:
+                    edge_color = "darkred"
                 else:
-                    edge_colors.append("none")
+                    edge_color = "gold"
+                edge_colors.append(edge_color if ca != ea else "none")
 
-                # Track forced actions
+                # Track forced actions with reasons
                 if wf:
                     forced_indices.append(i)
+                    reason_markers.append({"x": i, "y": price[i], "reason": reason})
 
-            step_size = max(1, len(storage) // 10)
-
-            plt.figure(figsize=(14, 12))
+            plt.figure(figsize=(14, 14))
 
             # Storage plot
-            plt.subplot(4, 1, 1)
-            plt.plot(range(len(storage)), storage, "bo-", label="Storage")
-            plt.xticks(
-                range(0, len(storage), step_size),
-                time_labels[::step_size],
-                rotation=45,
-                ha="right",
-            )
-            plt.ylabel("Storage")
-            plt.title(
-                f"Episode {episode_idx + 1}, Interval {interval_start // steps_per_interval + 1}"
-            )
+            plt.subplot(5, 1, 1)
+            plt.plot(storage, "bo-", label="Storage Level")
+            plt.xticks(range(0, len(storage), len(storage) // 8), [], rotation=45)
+            plt.ylabel("Storage Level")
+            plt.title(f"Episode {episode_idx+1} Behavior Analysis")
             plt.legend()
-            plt.ylim(min(storage) - 1, max(storage) + 1)
 
             # Price plot with action visualization
-            plt.subplot(4, 1, 2)
-            plt.plot(range(len(price)), price, "k-", label="Price")
-            # Plot executed actions
-            plt.scatter(
+            plt.subplot(5, 1, 2)
+            plt.plot(price, "k-", label="Price", alpha=0.5)
+
+            # Plot executed actions with edge colors showing chosen actions
+            scatter = plt.scatter(
                 range(len(price)),
                 price,
                 c=executed_colors,
-                s=40,
+                s=60,
                 edgecolors=edge_colors,
-                linewidths=0.5,
-                zorder=2,
+                linewidths=2,
+                zorder=3,
                 marker="o",
             )
-            # Overlay forced actions
-            if forced_indices:
-                forced_x = [x for x in forced_indices]
-                forced_y = [price[x] for x in forced_indices]
+
+            # Add forced action markers
+            marker_map = {
+                "forced_buy": ("^", "green"),
+                "prevented_sell": ("v", "yellow"),
+                "no_storage": ("s", "blue"),
+            }
+            for rm in reason_markers:
+                marker, color = marker_map.get(rm["reason"], ("x", "black"))
                 plt.scatter(
-                    forced_x,
-                    forced_y,
-                    marker="X",
-                    s=60,
+                    rm["x"],
+                    rm["y"] + 5,
+                    marker=marker,
+                    s=100,
+                    color=color,
                     edgecolors="black",
-                    facecolors="none",
                     linewidths=1,
-                    zorder=3,
-                    label="Forced Action",
+                    zorder=4,
                 )
 
+            plt.ylabel("Price & Actions")
+            plt.xticks(range(0, len(price), len(price) // 8), [], rotation=45)
+
+            # Action discrepancy plot
+            plt.subplot(5, 1, 3)
+            discrepancies = [
+                1 if ca != ea else 0 for ca, ea in zip(chosen_actions, executed_actions)
+            ]
+            plt.plot(discrepancies, "m-", label="Action Discrepancy (1 = mismatch)")
+            plt.ylabel("Action Mismatch")
+            plt.ylim(-0.1, 1.1)
             plt.xticks(
-                range(0, len(price), step_size),
-                time_labels[::step_size],
+                range(0, len(discrepancies), len(discrepancies) // 8), [], rotation=45
+            )
+
+            # Original Reward plot
+            plt.subplot(5, 1, 4)
+            plt.plot(original_rewards, "go-", label="Original Reward")
+            plt.ylabel("Original Reward")
+            plt.xticks(
+                range(0, len(original_rewards), len(original_rewards) // 8),
+                [],
+                rotation=45,
+            )
+
+            # Reshaped Reward plot
+            plt.subplot(5, 1, 5)
+            plt.plot(reshaped_rewards, "co-", label="Reshaped Reward")
+            plt.ylabel("Reshaped Reward")
+            plt.xticks(
+                range(0, len(reshaped_rewards), len(reshaped_rewards) // 8),
+                [
+                    time_labels[i]
+                    for i in range(0, len(reshaped_rewards), len(reshaped_rewards) // 8)
+                ],
                 rotation=45,
                 ha="right",
             )
-            plt.ylabel("Price (Actions)")
-            # Legend
-            legend_handles = [
+
+            # Create unified legend
+            legend_elements = [
                 plt.Line2D(
                     [0],
                     [0],
@@ -186,7 +206,7 @@ def plot_agent_behavior(
                     color="w",
                     markerfacecolor="green",
                     markersize=10,
-                    label="Buy (Executed)",
+                    label="Executed Buy",
                 ),
                 plt.Line2D(
                     [0],
@@ -195,7 +215,7 @@ def plot_agent_behavior(
                     color="w",
                     markerfacecolor="red",
                     markersize=10,
-                    label="Sell (Executed)",
+                    label="Executed Sell",
                 ),
                 plt.Line2D(
                     [0],
@@ -204,68 +224,70 @@ def plot_agent_behavior(
                     color="w",
                     markerfacecolor="yellow",
                     markersize=10,
-                    label="Hold (Executed)",
+                    label="Executed Hold",
                 ),
                 plt.Line2D(
                     [0],
                     [0],
                     marker="o",
-                    color="black",
-                    linestyle="None",
-                    markersize=10,
-                    label="Action Override",
+                    color="darkgreen",
                     markerfacecolor="none",
-                    markeredgewidth=1,
+                    markersize=10,
+                    label="Chosen Buy",
                 ),
                 plt.Line2D(
                     [0],
                     [0],
-                    marker="X",
-                    color="black",
+                    marker="o",
+                    color="darkred",
+                    markerfacecolor="none",
+                    markersize=10,
+                    label="Chosen Sell",
+                ),
+                plt.Line2D(
+                    [0],
+                    [0],
+                    marker="o",
+                    color="gold",
+                    markerfacecolor="none",
+                    markersize=10,
+                    label="Chosen Hold",
+                ),
+                plt.Line2D(
+                    [0],
+                    [0],
+                    marker="^",
+                    color="green",
                     linestyle="None",
                     markersize=10,
-                    label="Forced Action",
-                    markeredgewidth=1,
+                    label="Forced Buy",
+                ),
+                plt.Line2D(
+                    [0],
+                    [0],
+                    marker="v",
+                    color="yellow",
+                    linestyle="None",
+                    markersize=10,
+                    label="Forced hold",
+                ),
+                plt.Line2D(
+                    [0],
+                    [0],
+                    marker="s",
+                    color="blue",
+                    linestyle="None",
+                    markersize=10,
+                    label="No Storage",
                 ),
             ]
-            plt.legend(handles=legend_handles, loc="upper right")
 
-            # Original Reward plot
-            plt.subplot(4, 1, 3)
-            plt.plot(
-                range(len(original_rewards)),
-                original_rewards,
-                "mo-",
-                label="Original Reward",
+            plt.figlegend(
+                handles=legend_elements,
+                loc="lower center",
+                ncol=3,
+                bbox_to_anchor=(0.5, -0.05),
             )
-            plt.xticks(
-                range(0, len(original_rewards), step_size),
-                time_labels[::step_size],
-                rotation=45,
-                ha="right",
-            )
-            plt.ylabel("Original Reward")
-            plt.legend()
-            plt.ylim(min(original_rewards) - 1, max(original_rewards) + 1)
-
-            # Reshaped Reward plot
-            plt.subplot(4, 1, 4)
-            plt.plot(
-                range(len(reshaped_rewards)),
-                reshaped_rewards,
-                "co-",
-                label="Reshaped Reward",
-            )
-            plt.xticks(
-                range(0, len(reshaped_rewards), step_size),
-                time_labels[::step_size],
-                rotation=45,
-                ha="right",
-            )
-            plt.xlabel("Time (days and hours)")
-            plt.ylabel("Reshaped Reward")
-            plt.legend()
-            plt.ylim(min(reshaped_rewards) - 1, max(reshaped_rewards) + 1)
 
             # Save the figure
             behavior_graph_path = os.path.join(
@@ -273,11 +295,9 @@ def plot_agent_behavior(
                 f"episode_{episode_idx + 1}_interval_{interval_start // steps_per_interval + 1}_behavior.png",
             )
             plt.tight_layout()
-            plt.savefig(behavior_graph_path)
+            plt.savefig(behavior_graph_path, bbox_inches="tight")
             plt.close()
-            print(
-                f"Behavior graph for Episode {episode_idx + 1}, Interval {interval_start // steps_per_interval + 1} saved at {behavior_graph_path}"
-            )
+            print(f"Behavior graph saved at {behavior_graph_path}")
 
 
 def main():
