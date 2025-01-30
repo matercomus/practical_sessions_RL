@@ -126,14 +126,18 @@ class DeepQLearningAgent:
         os.makedirs(output_dir, exist_ok=True)
         self.output_dir = output_dir
 
-        # Environment parameters
+        # Environment parameters with proper bounds
         self.daily_energy_demand = 120.0
         self.max_power_rate = 10.0
-        self.storage_scale = 170.0
+        self.storage_scale = 170.0  # Maximum storage capacity
+
+        # Set up price scaling based on historical data
         if hasattr(self.env, "price_values"):
-            self.price_scale = np.percentile(self.env.price_values.flatten(), 99)
+            self.price_min = np.min(self.env.price_values)
+            self.price_max = np.max(self.env.price_values)
         else:
-            self.price_scale = 100.0
+            self.price_min = 0.0
+            self.price_max = 100.0
 
         # Setup device and networks
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -227,23 +231,42 @@ class DeepQLearningAgent:
 
     def _normalize_state(self, state):
         """
-        Normalize state values to reasonable ranges.
+        Normalize state values to the range [0, 1].
+
+        State components:
+        1. storage_level: Bounded by [0, storage_scale]
+        2. price: Using min-max normalization based on historical price range
+        3. hour: 24-hour format [0, 23]
+        4. day: Days of week [1, 7]
 
         Args:
-            state: Raw state values
+            state: Raw state values (storage_level, price, hour, day)
 
         Returns:
-            numpy.ndarray: Normalized state values
+            numpy.ndarray: Normalized state values, all in range [0, 1]
         """
-        # TODO: Normalize st all values between 0 and 1
+        storage_level, price, hour, day = state
+
+        # Normalize storage level: Already bounded by [0, storage_scale]
+        norm_storage = np.clip(storage_level / self.storage_scale, 0, 1)
+
+        # Normalize price: Use historical min/max for better scaling
+        if hasattr(self.env, "price_values"):
+            price_min = np.min(self.env.price_values)
+            price_max = np.max(self.env.price_values)
+            norm_price = np.clip((price - price_min) / (price_max - price_min), 0, 1)
+        else:
+            # Fallback to simple scaling if no historical prices available
+            norm_price = np.clip(price / self.price_scale, 0, 1)
+
+        # Normalize hour: [0, 23] -> [0, 1]
+        norm_hour = hour / 23.0
+
+        # Normalize day: [1, 7] -> [0, 1]
+        norm_day = (day - 1) / 6.0
+
         return np.array(
-            [
-                state[0] / self.storage_scale,
-                state[1] / self.price_scale,
-                state[2] / 24.0,
-                state[3] / 7.0,
-            ],
-            dtype=np.float32,
+            [norm_storage, norm_price, norm_hour, norm_day], dtype=np.float32
         )
 
     def choose_action(self, state):
@@ -258,22 +281,20 @@ class DeepQLearningAgent:
         """
         if np.random.rand() < self.epsilon:
             action_idx = np.random.randint(0, 3)
-            action = action_idx - 1
-            logger.debug(f"Random action: {action}")
-        else:
-            state_tensor = (
-                torch.tensor(self._normalize_state(state), dtype=torch.float32)
-                .unsqueeze(0)
-                .to(self.device)
-            )
+            return action_idx - 1
 
-            with torch.no_grad():
-                q_values = self.policy_net(state_tensor)
-                action_idx = q_values.argmax().item()
-            action = action_idx - 1
-            logger.debug(f"Policy action: {action}")
+        # Ensure state normalization is applied
+        normalized_state = self._normalize_state(state)
+        state_tensor = (
+            torch.tensor(normalized_state, dtype=torch.float32)
+            .unsqueeze(0)
+            .to(self.device)
+        )
 
-        return action
+        with torch.no_grad():
+            q_values = self.policy_net(state_tensor)
+            action_idx = q_values.argmax().item()
+        return action_idx - 1
 
     def reward_shaping(self, state, chosen_action, executed_action, reward, next_state):
         """
@@ -344,17 +365,7 @@ class DeepQLearningAgent:
     def update(self, state, chosen_action, executed_action, reward, next_state, done):
         """
         Update agent with a transition, including both chosen and executed actions.
-
-        Args:
-            state: Current state
-            chosen_action: Action chosen by agent
-            executed_action: Action actually executed
-            reward: Reward received
-            next_state: Resulting state
-            done: Whether episode ended
-
-        Returns:
-            tuple: (shaped_reward, original_reward)
+        [Previous docstring content remains the same]
         """
         shaped_r, original_r = self.reward_shaping(
             state, chosen_action, executed_action, reward, next_state
@@ -363,18 +374,13 @@ class DeepQLearningAgent:
         # Convert executed_action to index (0, 1, 2)
         action_idx = int(executed_action + 1)
 
-        # Store transition with executed action
-        self.memory.add(
-            (
-                self._normalize_state(state),
-                action_idx,
-                shaped_r,
-                self._normalize_state(next_state),
-                done,
-            )
-        )
+        # Ensure both states are normalized
+        norm_state = self._normalize_state(state)
+        norm_next_state = self._normalize_state(next_state)
 
-        # Perform training step if conditions met
+        # Store normalized transition
+        self.memory.add((norm_state, action_idx, shaped_r, norm_next_state, done))
+
         if (
             len(self.memory) >= self.batch_size
             and self.steps % self.update_frequency == 0
