@@ -299,17 +299,10 @@ class DeepQLearningAgent:
     def reward_shaping(self, state, chosen_action, executed_action, reward, next_state):
         """
         Shape the reward by:
-          1) Scaling the environment's reward,
-          2) Penalizing forced/mismatched actions,
-          3) Using tanh to keep the final shaped reward in [-1, 1].
+          1) Using tanh to keep the final shaped reward in [-1, 1].
         """
 
         scaled_reward = reward
-
-        # Penalize the mismatch between chosen_action and executed_action
-        delta_action = abs(chosen_action - executed_action)
-        if delta_action > 1e-5:
-            scaled_reward += self.invalid_action_penalty * delta_action
 
         # Apply a tanh-based saturating function
         #     This will smoothly restrict the final shaped_reward to [-1, 1].
