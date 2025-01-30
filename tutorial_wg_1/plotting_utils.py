@@ -5,39 +5,61 @@ import argparse
 from datetime import timedelta
 
 
-def plot_metrics(training_rewards, validation_rewards, output_dir):
-    """Plot and save training/validation metrics"""
-    # Plot training rewards
-    plt.figure(figsize=(10, 6))
-    plt.plot(
-        range(1, len(training_rewards) + 1), training_rewards, label="Training Rewards"
-    )
-    plt.xlabel("Episode")
-    plt.ylabel("Reward")
-    plt.title("Training Rewards")
-    plt.legend()
-    plt.grid()
-    plt.tight_layout()
-    training_graph_path = os.path.join(output_dir, "training_rewards.png")
-    plt.savefig(training_graph_path)
-    print(f"Training graph saved at {training_graph_path}")
+def plot_metrics(
+    train_orig, train_shaped, val_orig, val_shaped, val_episodes, output_dir
+):
+    plt.figure(figsize=(12, 6))
 
-    # Plot validation rewards if available
-    if validation_rewards:
-        plt.figure(figsize=(10, 6))
-        validation_episodes, val_rewards = zip(*validation_rewards)
+    # Training data handling
+    episodes = list(range(1, len(train_orig) + 1)) if train_orig else []
+
+    # Training curves (only if data exists)
+    if train_orig:
         plt.plot(
-            validation_episodes, val_rewards, label="Validation Rewards", marker="o"
+            episodes,
+            train_orig,
+            label="Training Original Reward",
+            color="blue",
+            alpha=0.6,
         )
-        plt.xlabel("Episode")
-        plt.ylabel("Reward")
-        plt.title("Validation Rewards")
-        plt.legend()
-        plt.grid()
-        plt.tight_layout()
-        validation_graph_path = os.path.join(output_dir, "validation_rewards.png")
-        plt.savefig(validation_graph_path)
-        print(f"Validation graph saved at {validation_graph_path}")
+        plt.plot(
+            episodes,
+            train_shaped,
+            label="Training Shaped Reward",
+            color="green",
+            alpha=0.6,
+        )
+
+    # Validation markers if available
+    if val_episodes:
+        plt.scatter(
+            val_episodes,
+            val_orig,
+            marker="X",
+            s=100,
+            label="Validation Original",
+            color="darkblue",
+        )
+        plt.scatter(
+            val_episodes,
+            val_shaped,
+            marker="X",
+            s=100,
+            label="Validation Shaped",
+            color="darkgreen",
+        )
+
+    plt.title("Reward Progression During Training")
+    plt.xlabel("Training Episodes")
+    plt.ylabel("Reward Value")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+
+    # Save and close
+    plt.savefig(os.path.join(output_dir, "reward_progression.png"), dpi=300)
+    plt.savefig(os.path.join(output_dir, "reward_progression.pdf"))
+    plt.close()
 
 
 def plot_agent_behavior(

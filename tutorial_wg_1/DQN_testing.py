@@ -396,20 +396,9 @@ class DeepQLearningAgent:
         return shaped_r, original_r
 
     def train(self, env, episodes, validate_every=None, val_env=None):
-        """
-        Train the agent.
-
-        Args:
-            env: Training environment
-            episodes: Number of episodes to train
-            validate_every: Optional, evaluate every N episodes
-            val_env: Optional, environment to use for validation
-
-        Returns:
-            tuple: (training_rewards, validation_scores, history, forced_action_stats)
-        """
         logger.info(f"Starting training for {episodes} episodes...")
-        train_rewards = []
+        train_rewards_original = []
+        train_rewards_shaped = []
         val_scores = []
         state_action_history = []
         forced_action_stats = {
@@ -422,7 +411,8 @@ class DeepQLearningAgent:
         for ep in range(episodes):
             s = env.observation()
             done = False
-            ep_r = 0.0
+            ep_r_shaped = 0.0
+            ep_r_original = 0.0
             ep_history = []
 
             while not done:
@@ -458,19 +448,24 @@ class DeepQLearningAgent:
                     }
                 )
 
-                ep_r += shaped_r
+                ep_r_shaped += shaped_r
+                ep_r_original += orig_r
                 s = s_next
 
             self.save()
-
-            # Store episode results
-            train_rewards.append(ep_r)
+            train_rewards_shaped.append(ep_r_shaped)
+            train_rewards_original.append(ep_r_original)
             state_action_history.append(ep_history)
 
-            # Periodic validation if requested
+            # Periodic validation
             if validate_every and val_env and (ep + 1) % validate_every == 0:
-                val_r = self.validate(val_env)
-                val_scores.append((ep + 1, val_r))
+                val_orig, val_shaped, _ = self.validate(val_env)
+                val_scores.append((ep + 1, val_orig, val_shaped))
+                logger.info(
+                    f"Validation at episode {ep+1}: "
+                    f"Original Reward: {val_orig:.2f}, "
+                    f"Shaped Reward: {val_shaped:.2f}"
+                )
 
             # Epsilon decay
             if ep < self.epsilon_decay_episodes:
@@ -480,7 +475,7 @@ class DeepQLearningAgent:
             else:
                 self.epsilon = self.epsilon_end
 
-            # Calculate and log statistics
+            # Logging
             forced_rate = (
                 forced_action_stats["forced_buy"]
                 + forced_action_stats["prevented_sell"]
@@ -489,11 +484,10 @@ class DeepQLearningAgent:
 
             logger.info(
                 f"Episode {ep + 1}/{episodes}: "
-                f"Reward={ep_r:.2f}, "
-                f"Epsilon={self.epsilon:.4f}, "
-                f"Forced Rate={forced_rate:.2%}, "
-                f"Buffer Size={len(self.memory)}, "
-                f"Steps={self.steps}"
+                f"Original Reward: {ep_r_original:.2f}, "
+                f"Shaped Reward: {ep_r_shaped:.2f}, "
+                f"Epsilon: {self.epsilon:.4f}, "
+                f"Forced Rate: {forced_rate:.2%}"
             )
 
             env.reset()
@@ -501,77 +495,78 @@ class DeepQLearningAgent:
         logger.info("Training complete.")
 
         # Save final rewards
-        final_train_reward = train_rewards[-1] if train_rewards else None
-        final_val_reward = val_scores[-1][1] if val_scores else None
-
-        rewards_data = {
-            "final_train_reward": final_train_reward,
-            "final_val_reward": final_val_reward,
+        final_rewards = {
+            "final_train_original": (
+                train_rewards_original[-1] if train_rewards_original else None
+            ),
+            "final_train_shaped": (
+                train_rewards_shaped[-1] if train_rewards_shaped else None
+            ),
+            "final_val_original": val_scores[-1][1] if val_scores else None,
+            "final_val_shaped": val_scores[-1][2] if val_scores else None,
         }
-        rewards_file_path = os.path.join(self.output_dir, "final_rewards.json")
-        with open(rewards_file_path, "w") as f:
-            json.dump(rewards_data, f, indent=2)
-        logger.info(
-            f"Final training and validation rewards saved to {rewards_file_path}"
+        with open(os.path.join(self.output_dir, "final_rewards.json"), "w") as f:
+            json.dump(final_rewards, f, indent=2)
+
+        return (
+            train_rewards_original,
+            train_rewards_shaped,
+            val_scores,
+            state_action_history,
+            forced_action_stats,
         )
 
-        return train_rewards, val_scores, state_action_history, forced_action_stats
-
-    def validate(self, env, num_episodes=5):
-        """
-        Evaluate the agent's performance without exploration.
-
-        Args:
-            env: Environment to evaluate in
-            num_episodes: Number of episodes to evaluate
-
-        Returns:
-            float: Average reward across validation episodes
-        """
-        total_r = 0.0
+    def validate(self, env, num_episodes=1):
+        logger.info(f"Validating agent for {num_episodes} episodes...")
+        total_r_shaped = 0.0
+        total_r_original = 0.0
         old_epsilon = self.epsilon
-        self.epsilon = 0.0  # No exploration during validation
-
-        forced_actions = 0
-        total_actions = 0
+        self.epsilon = 0.0  # No exploration
+        validation_history = []  # Collect validation history
 
         for _ in range(num_episodes):
             s = env.observation()
             done = False
-            ep_r = 0.0
+            ep_r_shaped = 0.0
+            ep_r_original = 0.0
+            ep_history = []
 
             while not done:
-                # Choose action greedily
                 chosen_action = self.choose_action(s)
-                executed_action, was_forced, _ = self.detect_forced_action(
+                executed_action, was_forced, reason = self.detect_forced_action(
                     s, chosen_action
                 )
-
-                # Track forced actions
-                total_actions += 1
-                if was_forced:
-                    forced_actions += 1
-
-                # Execute step
                 s_next, r, done = env.step(executed_action)
-                shaped_r, _ = self.reward_shaping(
+                shaped_r, orig_r = self.reward_shaping(
                     s, chosen_action, executed_action, r, s_next
                 )
-                ep_r += shaped_r
+
+                # Record step details
+                ep_history.append(
+                    {
+                        "state": s,
+                        "chosen_action": chosen_action,
+                        "executed_action": executed_action,
+                        "original_reward": orig_r,
+                        "shaped_reward": shaped_r,
+                        "was_forced": was_forced,
+                        "force_reason": reason,
+                    }
+                )
+
+                ep_r_shaped += shaped_r
+                ep_r_original += orig_r
                 s = s_next
 
-            total_r += ep_r
+            total_r_shaped += ep_r_shaped
+            total_r_original += ep_r_original
+            validation_history.append(ep_history)
             env.reset()
 
-        self.epsilon = old_epsilon  # Restore exploration
-        avg_r = total_r / num_episodes
-        forced_rate = forced_actions / max(1, total_actions)
-
-        logger.info(
-            f"Validation: Avg Reward={avg_r:.2f}, "
-            f"Forced Action Rate={forced_rate:.2%}"
-        )
-        return avg_r
+        self.epsilon = old_epsilon
+        avg_original = total_r_original / num_episodes
+        avg_shaped = total_r_shaped / num_episodes
+        return avg_original, avg_shaped, validation_history
 
     def save_hyperparams(self):
         """Save hyperparameters to JSON file"""
@@ -607,7 +602,7 @@ class DeepQLearningAgent:
         Args:
             path: Path to checkpoint file
         """
-        checkpoint = torch.load(path, map_location=self.device)
+        checkpoint = torch.load(path, map_location=self.device, weights_only=True)
         self.policy_net.load_state_dict(checkpoint["policy_net_state_dict"])
         self.target_net.load_state_dict(checkpoint["target_net_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
@@ -617,13 +612,8 @@ class DeepQLearningAgent:
             self.hparams = checkpoint["hparams"]
         logger.info(f"Model loaded from {path}")
 
-    def save_state_action_history(self, history):
-        """
-        Save the state-action history to a JSON file.
-
-        Args:
-            history: List of episode histories
-        """
+    def save_state_action_history(self, history, filename="state_action_history.json"):
+        """Save the state-action history to a JSON file with custom filename"""
         serializable = []
         for ep in history:
             ep_data = []
@@ -658,7 +648,7 @@ class DeepQLearningAgent:
                 )
             serializable.append(ep_data)
 
-        save_path = os.path.join(self.output_dir, "state_action_history.json")
+        save_path = os.path.join(self.output_dir, filename)
         with open(save_path, "w") as f:
             json.dump(serializable, f, indent=2)
         logger.info(f"State-action history saved to {save_path}")
