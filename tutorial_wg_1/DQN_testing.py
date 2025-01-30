@@ -270,7 +270,6 @@ class DeepQLearningAgent:
             # Fallback if test_data is not available assume 3 years
             norm_day = (day - 1) / (3 * 365)
 
-        print(f"norm_storage: {norm_storage}, norm_price: {norm_price}, norm_hour: {norm_hour}, norm_day: {norm_day}")
         return np.array(
             [norm_storage, norm_price, norm_hour, norm_day], dtype=np.float32
         )
