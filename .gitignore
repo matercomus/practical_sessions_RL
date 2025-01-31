@@ -9,3 +9,5 @@ run_*/
 distributional_reinforcement_learning
 distributional_reinforcement_learning/__pycache__
 distributional_reinforcement_learning
+DQN/__pycache__
+DQN/data
